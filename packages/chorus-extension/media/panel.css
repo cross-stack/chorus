@@ -1,0 +1,279 @@
+body {
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    color: var(--vscode-foreground);
+    background-color: var(--vscode-editor-background);
+    margin: 0;
+    padding: 0;
+}
+
+.chorus-panel {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.tab-nav {
+    display: flex;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    background-color: var(--vscode-tab-inactiveBackground);
+}
+
+.tab-button {
+    background: none;
+    border: none;
+    color: var(--vscode-tab-inactiveForeground);
+    padding: 12px 20px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+    font-size: inherit;
+}
+
+.tab-button:hover {
+    background-color: var(--vscode-tab-hoverBackground);
+    color: var(--vscode-tab-activeForeground);
+}
+
+.tab-button.active {
+    background-color: var(--vscode-tab-activeBackground);
+    color: var(--vscode-tab-activeForeground);
+    border-bottom-color: var(--vscode-focusBorder);
+}
+
+.tab-button:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.tab-content {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.tab-pane {
+    display: none;
+    padding: 20px;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+.tab-pane.active {
+    display: block;
+}
+
+/* Context Tab Styles */
+.search-section {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.search-section input {
+    flex: 1;
+    padding: 8px 12px;
+    background-color: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 3px;
+    font-size: inherit;
+}
+
+.search-section input:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.search-section button {
+    padding: 8px 16px;
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: inherit;
+}
+
+.search-section button:hover {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+.search-section button:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.results-section {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.result-item {
+    margin-bottom: 12px;
+    padding: 12px;
+    background-color: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 3px;
+}
+
+.result-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.result-type {
+    background-color: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.85em;
+    text-transform: uppercase;
+}
+
+.result-title {
+    font-weight: bold;
+}
+
+.result-path {
+    font-size: 0.9em;
+    color: var(--vscode-descriptionForeground);
+    margin-bottom: 4px;
+}
+
+.result-content {
+    font-size: 0.9em;
+    line-height: 1.4;
+}
+
+/* Evidence Tab Styles */
+.evidence-form {
+    max-width: 600px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: bold;
+}
+
+.form-group textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 8px 12px;
+    background-color: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: inherit;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.form-group textarea:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.evidence-form button[type="submit"] {
+    padding: 10px 20px;
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: inherit;
+}
+
+.evidence-form button[type="submit"]:hover {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+.evidence-form button[type="submit"]:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+/* Equity Tab Styles */
+.ballot-form {
+    max-width: 500px;
+}
+
+.ballot-form input[type="text"],
+.ballot-form select {
+    width: 100%;
+    padding: 8px 12px;
+    background-color: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 3px;
+    font-size: inherit;
+    box-sizing: border-box;
+}
+
+.ballot-form input[type="range"] {
+    width: 100%;
+    margin-right: 10px;
+}
+
+.ballot-form input:focus,
+.ballot-form select:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.status-section {
+    margin-top: 20px;
+    padding: 12px;
+    border-radius: 3px;
+}
+
+.success {
+    background-color: var(--vscode-terminal-ansiGreen);
+    color: var(--vscode-editor-background);
+    padding: 8px 12px;
+    border-radius: 3px;
+}
+
+.ballot-item {
+    margin-bottom: 12px;
+    padding: 12px;
+    background-color: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 3px;
+}
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+    .tab-button {
+        transition: none;
+    }
+}
+
+/* High contrast mode adjustments */
+@media (prefers-contrast: high) {
+    .result-item,
+    .ballot-item {
+        border-width: 2px;
+    }
+    
+    .tab-button.active {
+        border-bottom-width: 3px;
+    }
+}
+
+/* Focus indicators for keyboard navigation */
+.tab-button:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid var(--vscode-focusBorder);
+    outline-offset: 2px;
+}

@@ -1,0 +1,67 @@
+{
+  "name": "chorus-extension",
+  "displayName": "Chorus - Evidence-first Code Review",
+  "description": "Evidence-first code review extension for VS Code/Positron",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.74.0",
+    "node": ">=18.0.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:chorus.showPanel",
+    "onLanguage:typescript",
+    "onLanguage:javascript"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "chorus.showPanel",
+        "title": "Show Chorus Panel",
+        "category": "Chorus"
+      },
+      {
+        "command": "chorus.addEvidence",
+        "title": "Add Chorus Evidence Block",
+        "category": "Chorus"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "chorus.panel",
+          "name": "Chorus",
+          "when": "chorus.enabled"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc -p ./",
+    "lint": "eslint src --ext ts",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "vsce:package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "18.x",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@vitest/coverage-v8": "^0.34.0",
+    "eslint": "^8.45.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^0.34.0",
+    "vsce": "^2.15.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^8.7.0"
+  }
+}

@@ -1,0 +1,1206 @@
+{
+  "numTotalTestSuites": 36,
+  "numPassedTestSuites": 36,
+  "numFailedTestSuites": 0,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 93,
+  "numPassedTests": 89,
+  "numFailedTests": 4,
+  "numPendingTests": 0,
+  "numTodoTests": 0,
+  "startTime": 1758836456363,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "",
+            "RelatedContextProvider",
+            "provideCodeLenses"
+          ],
+          "fullName": " RelatedContextProvider provideCodeLenses should provide CodeLens for files with relevant context",
+          "status": "passed",
+          "title": "should provide CodeLens for files with relevant context",
+          "duration": 53,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "RelatedContextProvider",
+            "provideCodeLenses"
+          ],
+          "fullName": " RelatedContextProvider provideCodeLenses should provide CodeLens for functions and classes",
+          "status": "passed",
+          "title": "should provide CodeLens for functions and classes",
+          "duration": 42,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "RelatedContextProvider",
+            "provideCodeLenses"
+          ],
+          "fullName": " RelatedContextProvider provideCodeLenses should return empty array when no relevant context found",
+          "status": "passed",
+          "title": "should return empty array when no relevant context found",
+          "duration": 42,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "RelatedContextProvider",
+            "provideCodeLenses"
+          ],
+          "fullName": " RelatedContextProvider provideCodeLenses should handle documents with no symbol definitions",
+          "status": "passed",
+          "title": "should handle documents with no symbol definitions",
+          "duration": 42,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "RelatedContextProvider",
+            "provideCodeLenses"
+          ],
+          "fullName": " RelatedContextProvider provideCodeLenses should handle errors gracefully",
+          "status": "passed",
+          "title": "should handle errors gracefully",
+          "duration": 68,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "RelatedContextProvider",
+            "provideCodeLenses"
+          ],
+          "fullName": " RelatedContextProvider provideCodeLenses should pass correct arguments to showPanel command",
+          "status": "passed",
+          "title": "should pass correct arguments to showPanel command",
+          "duration": 50,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "RelatedContextProvider",
+            "provideCodeLenses"
+          ],
+          "fullName": " RelatedContextProvider provideCodeLenses should create different CodeLens for symbols with context",
+          "status": "passed",
+          "title": "should create different CodeLens for symbols with context",
+          "duration": 43,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "RelatedContextProvider",
+            "provideCodeLenses"
+          ],
+          "fullName": " RelatedContextProvider provideCodeLenses should handle multiple symbols of same type correctly",
+          "status": "passed",
+          "title": "should handle multiple symbols of same type correctly",
+          "duration": 38,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "RelatedContextProvider",
+            "provideCodeLenses"
+          ],
+          "fullName": " RelatedContextProvider provideCodeLenses should handle TypeScript interfaces and types",
+          "status": "passed",
+          "title": "should handle TypeScript interfaces and types",
+          "duration": 36,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "RelatedContextProvider",
+            "provideCodeLenses"
+          ],
+          "fullName": " RelatedContextProvider provideCodeLenses should respect context count in title",
+          "status": "passed",
+          "title": "should respect context count in title",
+          "duration": 34,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "RelatedContextProvider",
+            "edge cases"
+          ],
+          "fullName": " RelatedContextProvider edge cases should handle very long files",
+          "status": "passed",
+          "title": "should handle very long files",
+          "duration": 317,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "RelatedContextProvider",
+            "edge cases"
+          ],
+          "fullName": " RelatedContextProvider edge cases should handle files with special characters",
+          "status": "passed",
+          "title": "should handle files with special characters",
+          "duration": 25,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "RelatedContextProvider",
+            "edge cases"
+          ],
+          "fullName": " RelatedContextProvider edge cases should handle empty files",
+          "status": "passed",
+          "title": "should handle empty files",
+          "duration": 27,
+          "failureMessages": []
+        }
+      ],
+      "startTime": 1758836457621,
+      "endTime": 1758836458440,
+      "status": "passed",
+      "message": "",
+      "name": "/home/user/Tresorit/projects/software/chorus/packages/chorus-extension/src/codelens/RelatedContextProvider.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "simpleGitLog"
+          ],
+          "fullName": " GitService simpleGitLog should parse git log output correctly",
+          "status": "passed",
+          "title": "should parse git log output correctly",
+          "duration": 10,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "simpleGitLog"
+          ],
+          "fullName": " GitService simpleGitLog should call git with correct arguments",
+          "status": "passed",
+          "title": "should call git with correct arguments",
+          "duration": 5,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "simpleGitLog"
+          ],
+          "fullName": " GitService simpleGitLog should use default limit when not specified",
+          "status": "passed",
+          "title": "should use default limit when not specified",
+          "duration": 5,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "simpleGitLog"
+          ],
+          "fullName": " GitService simpleGitLog should handle git command failures",
+          "status": "passed",
+          "title": "should handle git command failures",
+          "duration": 3,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "simpleGitLog"
+          ],
+          "fullName": " GitService simpleGitLog should handle spawn errors",
+          "status": "failed",
+          "title": "should handle spawn errors",
+          "duration": 25,
+          "failureMessages": [
+            "expected [Function] to throw error including 'Failed to spawn git process: Command …' but got 'Cannot read properties of undefined (…'"
+          ],
+          "location": {
+            "line": 124,
+            "column": 4
+          }
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "simpleGitLog"
+          ],
+          "fullName": " GitService simpleGitLog should handle empty git log output",
+          "status": "passed",
+          "title": "should handle empty git log output",
+          "duration": 4,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "simpleGitLog"
+          ],
+          "fullName": " GitService simpleGitLog should handle malformed git log entries",
+          "status": "passed",
+          "title": "should handle malformed git log entries",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "simpleGitLog"
+          ],
+          "fullName": " GitService simpleGitLog should handle entries with no files",
+          "status": "passed",
+          "title": "should handle entries with no files",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "simpleGitLog"
+          ],
+          "fullName": " GitService simpleGitLog should trim whitespace from files",
+          "status": "failed",
+          "title": "should trim whitespace from files",
+          "duration": 8,
+          "failureMessages": [
+            "expected [ 'src/file2.ts' ] to deeply equal [ 'src/file1.ts', 'src/file2.ts' ]"
+          ],
+          "location": {
+            "line": 186,
+            "column": 28
+          }
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "getCurrentBranch"
+          ],
+          "fullName": " GitService getCurrentBranch should return current branch name",
+          "status": "passed",
+          "title": "should return current branch name",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "getCurrentBranch"
+          ],
+          "fullName": " GitService getCurrentBranch should call git with correct arguments",
+          "status": "passed",
+          "title": "should call git with correct arguments",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "getCurrentBranch"
+          ],
+          "fullName": " GitService getCurrentBranch should handle git command failures",
+          "status": "passed",
+          "title": "should handle git command failures",
+          "duration": 3,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "getCurrentBranch"
+          ],
+          "fullName": " GitService getCurrentBranch should handle spawn errors",
+          "status": "failed",
+          "title": "should handle spawn errors",
+          "duration": 2,
+          "failureMessages": [
+            "expected [Function] to throw error including 'Failed to spawn git process: Command …' but got 'Cannot read properties of undefined (…'"
+          ],
+          "location": {
+            "line": 237,
+            "column": 4
+          }
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "getCurrentBranch"
+          ],
+          "fullName": " GitService getCurrentBranch should trim whitespace from branch name",
+          "status": "passed",
+          "title": "should trim whitespace from branch name",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "getCurrentBranch"
+          ],
+          "fullName": " GitService getCurrentBranch should handle empty output",
+          "status": "passed",
+          "title": "should handle empty output",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "parseGitLog function"
+          ],
+          "fullName": " GitService parseGitLog function should handle commits with body text between entries",
+          "status": "passed",
+          "title": "should handle commits with body text between entries",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "error scenarios"
+          ],
+          "fullName": " GitService error scenarios should handle partial data chunks",
+          "status": "passed",
+          "title": "should handle partial data chunks",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "GitService",
+            "error scenarios"
+          ],
+          "fullName": " GitService error scenarios should handle stderr data without immediate failure",
+          "status": "passed",
+          "title": "should handle stderr data without immediate failure",
+          "duration": 2,
+          "failureMessages": []
+        }
+      ],
+      "startTime": 1758836457584,
+      "endTime": 1758836457670,
+      "status": "failed",
+      "message": "",
+      "name": "/home/user/Tresorit/projects/software/chorus/packages/chorus-extension/src/services/GitService.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "findRelevantContext"
+          ],
+          "fullName": " Indexer findRelevantContext should find context by filename",
+          "status": "passed",
+          "title": "should find context by filename",
+          "duration": 44,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "findRelevantContext"
+          ],
+          "fullName": " Indexer findRelevantContext should find context by symbol name",
+          "status": "passed",
+          "title": "should find context by symbol name",
+          "duration": 41,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "findRelevantContext"
+          ],
+          "fullName": " Indexer findRelevantContext should limit results to 10",
+          "status": "passed",
+          "title": "should limit results to 10",
+          "duration": 64,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "findRelevantContext"
+          ],
+          "fullName": " Indexer findRelevantContext should deduplicate results",
+          "status": "passed",
+          "title": "should deduplicate results",
+          "duration": 43,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "findRelevantContext"
+          ],
+          "fullName": " Indexer findRelevantContext should rank commits higher than docs",
+          "status": "passed",
+          "title": "should rank commits higher than docs",
+          "duration": 45,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "findRelevantContext"
+          ],
+          "fullName": " Indexer findRelevantContext should handle empty file paths",
+          "status": "passed",
+          "title": "should handle empty file paths",
+          "duration": 50,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "findRelevantContext"
+          ],
+          "fullName": " Indexer findRelevantContext should handle files with no relevant context",
+          "status": "passed",
+          "title": "should handle files with no relevant context",
+          "duration": 44,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "deduplication and ranking"
+          ],
+          "fullName": " Indexer deduplication and ranking should prefer exact title matches",
+          "status": "passed",
+          "title": "should prefer exact title matches",
+          "duration": 28,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "indexGitCommits"
+          ],
+          "fullName": " Indexer indexGitCommits should handle git service errors gracefully",
+          "status": "passed",
+          "title": "should handle git service errors gracefully",
+          "duration": 41,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "indexGitCommits"
+          ],
+          "fullName": " Indexer indexGitCommits should process git log entries correctly",
+          "status": "passed",
+          "title": "should process git log entries correctly",
+          "duration": 34,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "indexDocuments"
+          ],
+          "fullName": " Indexer indexDocuments should handle file system errors gracefully",
+          "status": "passed",
+          "title": "should handle file system errors gracefully",
+          "duration": 54,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "indexDocuments"
+          ],
+          "fullName": " Indexer indexDocuments should extract title from markdown headings",
+          "status": "passed",
+          "title": "should extract title from markdown headings",
+          "duration": 42,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "error handling"
+          ],
+          "fullName": " Indexer error handling should handle missing workspace folders",
+          "status": "passed",
+          "title": "should handle missing workspace folders",
+          "duration": 43,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Indexer",
+            "error handling"
+          ],
+          "fullName": " Indexer error handling should handle empty workspace folders",
+          "status": "passed",
+          "title": "should handle empty workspace folders",
+          "duration": 31,
+          "failureMessages": []
+        }
+      ],
+      "startTime": 1758836457613,
+      "endTime": 1758836458221,
+      "status": "passed",
+      "message": "",
+      "name": "/home/user/Tresorit/projects/software/chorus/packages/chorus-extension/src/services/Indexer.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "initialization"
+          ],
+          "fullName": " LocalDB initialization should initialize database successfully",
+          "status": "passed",
+          "title": "should initialize database successfully",
+          "duration": 74,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "initialization"
+          ],
+          "fullName": " LocalDB initialization should create tables on initialization",
+          "status": "passed",
+          "title": "should create tables on initialization",
+          "duration": 48,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "initialization"
+          ],
+          "fullName": " LocalDB initialization should throw error when accessing uninitialized database",
+          "status": "passed",
+          "title": "should throw error when accessing uninitialized database",
+          "duration": 41,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "context entries"
+          ],
+          "fullName": " LocalDB context entries should add context entry successfully",
+          "status": "passed",
+          "title": "should add context entry successfully",
+          "duration": 43,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "context entries"
+          ],
+          "fullName": " LocalDB context entries should add multiple context entries with unique IDs",
+          "status": "passed",
+          "title": "should add multiple context entries with unique IDs",
+          "duration": 60,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "context entries"
+          ],
+          "fullName": " LocalDB context entries should search context by content",
+          "status": "passed",
+          "title": "should search context by content",
+          "duration": 65,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "context entries"
+          ],
+          "fullName": " LocalDB context entries should search context by title",
+          "status": "passed",
+          "title": "should search context by title",
+          "duration": 34,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "context entries"
+          ],
+          "fullName": " LocalDB context entries should filter search results by type",
+          "status": "passed",
+          "title": "should filter search results by type",
+          "duration": 32,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "context entries"
+          ],
+          "fullName": " LocalDB context entries should return empty array when no matches found",
+          "status": "passed",
+          "title": "should return empty array when no matches found",
+          "duration": 33,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "context entries"
+          ],
+          "fullName": " LocalDB context entries should parse metadata correctly",
+          "status": "passed",
+          "title": "should parse metadata correctly",
+          "duration": 37,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "context entries"
+          ],
+          "fullName": " LocalDB context entries should limit search results to 50",
+          "status": "passed",
+          "title": "should limit search results to 50",
+          "duration": 49,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "ballots"
+          ],
+          "fullName": " LocalDB ballots should add ballot successfully",
+          "status": "passed",
+          "title": "should add ballot successfully",
+          "duration": 44,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "ballots"
+          ],
+          "fullName": " LocalDB ballots should retrieve ballots by PR reference",
+          "status": "passed",
+          "title": "should retrieve ballots by PR reference",
+          "duration": 35,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "ballots"
+          ],
+          "fullName": " LocalDB ballots should return empty array for non-existent PR",
+          "status": "passed",
+          "title": "should return empty array for non-existent PR",
+          "duration": 25,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "ballots"
+          ],
+          "fullName": " LocalDB ballots should validate decision values",
+          "status": "passed",
+          "title": "should validate decision values",
+          "duration": 22,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "ballots"
+          ],
+          "fullName": " LocalDB ballots should validate confidence range",
+          "status": "passed",
+          "title": "should validate confidence range",
+          "duration": 23,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "ballots"
+          ],
+          "fullName": " LocalDB ballots should reveal ballots for PR",
+          "status": "passed",
+          "title": "should reveal ballots for PR",
+          "duration": 24,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "ballots"
+          ],
+          "fullName": " LocalDB ballots should order ballots by creation date descending",
+          "status": "passed",
+          "title": "should order ballots by creation date descending",
+          "duration": 128,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "data management"
+          ],
+          "fullName": " LocalDB data management should clear all data",
+          "status": "passed",
+          "title": "should clear all data",
+          "duration": 25,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "data management"
+          ],
+          "fullName": " LocalDB data management should dispose resources properly",
+          "status": "passed",
+          "title": "should dispose resources properly",
+          "duration": 21,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "error handling"
+          ],
+          "fullName": " LocalDB error handling should handle database errors gracefully",
+          "status": "passed",
+          "title": "should handle database errors gracefully",
+          "duration": 19,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "error handling"
+          ],
+          "fullName": " LocalDB error handling should handle invalid JSON in metadata",
+          "status": "passed",
+          "title": "should handle invalid JSON in metadata",
+          "duration": 20,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "edge cases"
+          ],
+          "fullName": " LocalDB edge cases should handle empty strings in search",
+          "status": "passed",
+          "title": "should handle empty strings in search",
+          "duration": 20,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "edge cases"
+          ],
+          "fullName": " LocalDB edge cases should handle special characters in search",
+          "status": "passed",
+          "title": "should handle special characters in search",
+          "duration": 21,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "LocalDB",
+            "edge cases"
+          ],
+          "fullName": " LocalDB edge cases should be case-insensitive in search",
+          "status": "passed",
+          "title": "should be case-insensitive in search",
+          "duration": 20,
+          "failureMessages": []
+        }
+      ],
+      "startTime": 1758836457613,
+      "endTime": 1758836458578,
+      "status": "passed",
+      "message": "",
+      "name": "/home/user/Tresorit/projects/software/chorus/packages/chorus-extension/src/storage/LocalDB.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "activation"
+          ],
+          "fullName": " Extension Integration activation should activate extension successfully",
+          "status": "passed",
+          "title": "should activate extension successfully",
+          "duration": 26,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "activation"
+          ],
+          "fullName": " Extension Integration activation should register required commands",
+          "status": "passed",
+          "title": "should register required commands",
+          "duration": 11,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "activation"
+          ],
+          "fullName": " Extension Integration activation should register CodeLens provider",
+          "status": "passed",
+          "title": "should register CodeLens provider",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "activation"
+          ],
+          "fullName": " Extension Integration activation should set extension context",
+          "status": "passed",
+          "title": "should set extension context",
+          "duration": 3,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "activation"
+          ],
+          "fullName": " Extension Integration activation should add disposables to context subscriptions",
+          "status": "passed",
+          "title": "should add disposables to context subscriptions",
+          "duration": 3,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "activation"
+          ],
+          "fullName": " Extension Integration activation should initialize database and indexer",
+          "status": "passed",
+          "title": "should initialize database and indexer",
+          "duration": 3,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "activation"
+          ],
+          "fullName": " Extension Integration activation should handle activation errors gracefully",
+          "status": "passed",
+          "title": "should handle activation errors gracefully",
+          "duration": 4,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "commands",
+            "chorus.showPanel"
+          ],
+          "fullName": " Extension Integration commands chorus.showPanel should be registered",
+          "status": "passed",
+          "title": "should be registered",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "commands",
+            "chorus.showPanel"
+          ],
+          "fullName": " Extension Integration commands chorus.showPanel should execute without errors",
+          "status": "passed",
+          "title": "should execute without errors",
+          "duration": 3,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "commands",
+            "chorus.pasteFromTests"
+          ],
+          "fullName": " Extension Integration commands chorus.pasteFromTests should be registered",
+          "status": "passed",
+          "title": "should be registered",
+          "duration": 4,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "commands",
+            "chorus.pasteFromTests"
+          ],
+          "fullName": " Extension Integration commands chorus.pasteFromTests should show message when no active editor",
+          "status": "passed",
+          "title": "should show message when no active editor",
+          "duration": 4,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "commands",
+            "chorus.pasteFromTests"
+          ],
+          "fullName": " Extension Integration commands chorus.pasteFromTests should paste evidence template when editor is active",
+          "status": "passed",
+          "title": "should paste evidence template when editor is active",
+          "duration": 3,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "deactivation"
+          ],
+          "fullName": " Extension Integration deactivation should deactivate without errors",
+          "status": "passed",
+          "title": "should deactivate without errors",
+          "duration": 1,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "deactivation"
+          ],
+          "fullName": " Extension Integration deactivation should log deactivation message",
+          "status": "passed",
+          "title": "should log deactivation message",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "workspace integration"
+          ],
+          "fullName": " Extension Integration workspace integration should handle workspace with no folders",
+          "status": "passed",
+          "title": "should handle workspace with no folders",
+          "duration": 3,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "workspace integration"
+          ],
+          "fullName": " Extension Integration workspace integration should handle workspace with folders",
+          "status": "passed",
+          "title": "should handle workspace with folders",
+          "duration": 33,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "workspace integration"
+          ],
+          "fullName": " Extension Integration workspace integration should handle workspace changes during runtime",
+          "status": "passed",
+          "title": "should handle workspace changes during runtime",
+          "duration": 16,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "error handling"
+          ],
+          "fullName": " Extension Integration error handling should handle database initialization errors",
+          "status": "passed",
+          "title": "should handle database initialization errors",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "error handling"
+          ],
+          "fullName": " Extension Integration error handling should handle indexer errors gracefully",
+          "status": "passed",
+          "title": "should handle indexer errors gracefully",
+          "duration": 18,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "disposable management"
+          ],
+          "fullName": " Extension Integration disposable management should properly dispose all resources",
+          "status": "passed",
+          "title": "should properly dispose all resources",
+          "duration": 12,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "disposable management"
+          ],
+          "fullName": " Extension Integration disposable management should handle disposal errors gracefully",
+          "status": "failed",
+          "title": "should handle disposal errors gracefully",
+          "duration": 14,
+          "failureMessages": [
+            "Disposal error"
+          ],
+          "location": {
+            "line": 294,
+            "column": 12
+          }
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "performance"
+          ],
+          "fullName": " Extension Integration performance should activate quickly",
+          "status": "passed",
+          "title": "should activate quickly",
+          "duration": 14,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Extension Integration",
+            "performance"
+          ],
+          "fullName": " Extension Integration performance should not block during indexing",
+          "status": "passed",
+          "title": "should not block during indexing",
+          "duration": 313,
+          "failureMessages": []
+        }
+      ],
+      "startTime": 1758836457636,
+      "endTime": 1758836458136,
+      "status": "failed",
+      "message": "",
+      "name": "/home/user/Tresorit/projects/software/chorus/packages/chorus-extension/src/test/extension.integration.test.ts"
+    }
+  ]
+}
+{"test": "finished"}
