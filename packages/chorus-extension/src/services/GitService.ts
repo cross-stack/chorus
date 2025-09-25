@@ -62,9 +62,9 @@ function parseGitLog(output: string): GitLogEntry[] {
 	
 	for (const line of lines) {
 		if (line.includes('|')) {
-			// This is a commit header line
+			// this is a commit header line
 			if (currentEntry) {
-				// Finalize the previous entry
+				// finalize the previous entry
 				entries.push(currentEntry as GitLogEntry);
 			}
 			
@@ -80,7 +80,7 @@ function parseGitLog(output: string): GitLogEntry[] {
 				};
 			}
 		} else if (currentEntry) {
-			// This is a file name
+			// this is a file name
 			if (line.trim() && !line.startsWith(' ')) {
 				currentEntry.files = currentEntry.files || [];
 				currentEntry.files.push(line.trim());
@@ -88,7 +88,7 @@ function parseGitLog(output: string): GitLogEntry[] {
 		}
 	}
 	
-	// Don't forget the last entry
+	// don't forget the last entry
 	if (currentEntry) {
 		entries.push(currentEntry as GitLogEntry);
 	}

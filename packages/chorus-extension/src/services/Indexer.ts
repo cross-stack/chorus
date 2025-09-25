@@ -18,11 +18,11 @@ export class Indexer {
 
 		for (const folder of workspaceFolders) {
 			const folderPath = folder.uri.fsPath;
-			
-			// Index git commits
+
+			// index git commits
 			await this.indexGitCommits(folderPath);
-			
-			// Index documentation
+
+			// index documentation
 			await this.indexDocuments(folderPath);
 		}
 
@@ -31,8 +31,8 @@ export class Indexer {
 
 	private async indexGitCommits(workspacePath: string): Promise<void> {
 		try {
-			const commits = await simpleGitLog(workspacePath, 100); // Last 100 commits
-			
+			const commits = await simpleGitLog(workspacePath, 100); // last 100
+
 			for (const commit of commits) {
 				const filesString = commit.files.join(', ');
 				const contextEntry: Omit<ContextEntry, 'id' | 'indexed_at'> = {
@@ -60,7 +60,7 @@ export class Indexer {
 	private async indexDocuments(workspacePath: string): Promise<void> {
 		try {
 			const docPatterns = ['**/README.md', '**/docs/**/*.md', '**/*.md'];
-			
+
 			for (const pattern of docPatterns) {
 				const files = await vscode.workspace.findFiles(
 					new vscode.RelativePattern(workspacePath, pattern),
@@ -82,8 +82,8 @@ export class Indexer {
 		try {
 			const content = await fs.readFile(fileUri.fsPath, 'utf-8');
 			const relativePath = vscode.workspace.asRelativePath(fileUri);
-			
-			// Extract title from first heading or filename
+
+			// extract title from first heading or filename
 			const titleMatch = content.match(/^#\s+(.+)$/m);
 			const title = titleMatch ? titleMatch[1] : path.basename(fileUri.fsPath, '.md');
 
@@ -106,36 +106,36 @@ export class Indexer {
 
 	async findRelevantContext(filePath: string, symbolName?: string): Promise<ContextEntry[]> {
 		const queries: string[] = [];
-		
-		// Add filename-based queries
+
+		// add filename-based queries
 		const fileName = path.basename(filePath, path.extname(filePath));
 		queries.push(fileName);
-		
-		// Add symbol-based queries if provided
+
+		// add symbol-based queries if provided
 		if (symbolName) {
 			queries.push(symbolName);
 		}
-		
-		// Add directory-based queries
+
+		// add directory-based queries
 		const dirName = path.basename(path.dirname(filePath));
 		queries.push(dirName);
 
 		const allResults: ContextEntry[] = [];
-		
+
 		for (const query of queries) {
 			const results = await this.db.searchContext(query);
 			allResults.push(...results);
 		}
 
-		// Remove duplicates and rank by relevance
+		// remove duplicates and rank by relevance
 		const uniqueResults = this.deduplicateAndRank(allResults, queries);
 		return uniqueResults.slice(0, 10); // Top 10 results
 	}
 
 	private deduplicateAndRank(entries: ContextEntry[], queries: string[]): ContextEntry[] {
 		const uniqueMap = new Map<string, ContextEntry>();
-		
-		// Deduplicate by path
+
+		// deduplicate by path
 		for (const entry of entries) {
 			const key = entry.type + ':' + entry.path;
 			if (!uniqueMap.has(key)) {
@@ -143,20 +143,20 @@ export class Indexer {
 			}
 		}
 
-		// Simple ranking: prefer recent commits and exact matches
+		// simple ranking: prefer recent commits and exact matches
 		return Array.from(uniqueMap.values()).sort((a, b) => {
-			// Prefer commits over docs
+			// prefer commits over docs
 			if (a.type === 'commit' && b.type !== 'commit') return -1;
 			if (b.type === 'commit' && a.type !== 'commit') return 1;
-			
-			// Prefer exact title matches
+
+			// prefer exact title matches
 			const aHasExactMatch = queries.some(q => a.title.toLowerCase().includes(q.toLowerCase()));
 			const bHasExactMatch = queries.some(q => b.title.toLowerCase().includes(q.toLowerCase()));
-			
+
 			if (aHasExactMatch && !bHasExactMatch) return -1;
 			if (bHasExactMatch && !aHasExactMatch) return 1;
-			
-			// Default to indexed_at for tie-breaking (most recent first)
+
+			// default to indexed_at for tie-breaking (most recent first)
 			return b.indexed_at.localeCompare(a.indexed_at);
 		});
 	}

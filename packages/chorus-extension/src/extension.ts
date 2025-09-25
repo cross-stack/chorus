@@ -7,20 +7,20 @@ import { RelatedContextProvider } from './codelens/RelatedContextProvider';
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	console.log('Activating Chorus extension...');
 
-	// Initialize storage
+	// initialize storage
 	const db = new LocalDB(context.globalStorageUri.fsPath);
 	await db.initialize();
 
-	// Initialize services
+	// initialize services
 	const indexer = new Indexer(db);
 	await indexer.indexWorkspace();
 
-	// Register panel command
+	// register panel command
 	const panelCommand = vscode.commands.registerCommand('chorus.showPanel', () => {
 		ChorusPanel.createOrShow(context.extensionUri, db);
 	});
 
-	// Register add evidence command
+	// register add evidence command
 	const addEvidenceCommand = vscode.commands.registerCommand('chorus.addEvidence', async () => {
 		const editor = vscode.window.activeTextEditor;
 		if (!editor) {
@@ -29,20 +29,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 
 		try {
-			// Get clipboard content
+			// get clipboard content
 			const clipboardText = await vscode.env.clipboard.readText();
 
-			// Try to parse as test JSON
+			// try to parse as test JSON
 			let evidenceData = null;
 			try {
 				evidenceData = JSON.parse(clipboardText);
 			} catch {
-				// Not JSON, use raw text
+				// not JSON, use raw text
 			}
 
 			const evidenceBlock = formatEvidenceBlock(evidenceData, clipboardText);
 
-			// Insert evidence block
+			// insert evidence block
 			await editor.edit(editBuilder => {
 				const position = editor.selection.active;
 				editBuilder.insert(position, evidenceBlock);
@@ -54,7 +54,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 	});
 
-	// Register CodeLens provider
+	// register CodeLens provider
 	const codeLensProvider = new RelatedContextProvider(db);
 	const codeLensDisposable = vscode.languages.registerCodeLensProvider(
 		{ scheme: 'file', language: 'typescript' },
@@ -68,7 +68,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		db
 	);
 
-	// Set context for conditional UI
+	// set context for conditional UI
 	await vscode.commands.executeCommand('setContext', 'chorus.enabled', true);
 
 	console.log('Chorus extension activated successfully');
@@ -81,12 +81,12 @@ export function deactivate(): void {
 function formatEvidenceBlock(evidenceData: any, rawText: string): string {
 	const timestamp = new Date().toISOString();
 
-	// Check for test data patterns
+	// check for test data patterns
 	let testsSection = '';
 	let benchmarksSection = '';
 
 	if (evidenceData) {
-		// Handle common test frameworks
+		// handle common test frameworks
 		if (evidenceData.testResults || evidenceData.tests) {
 			testsSection = formatTestResults(evidenceData);
 		} else if (evidenceData.coverage) {
@@ -95,13 +95,13 @@ function formatEvidenceBlock(evidenceData: any, rawText: string): string {
 			testsSection = formatJestResults(evidenceData);
 		}
 
-		// Handle benchmark data
+		// handle benchmark data
 		if (evidenceData.benchmarks || evidenceData.performance) {
 			benchmarksSection = formatBenchmarkData(evidenceData);
 		}
 	}
 
-	// Fallback to raw text if no structured data
+	// fallback to raw text if no structured data
 	if (!testsSection && rawText.trim()) {
 		testsSection = `\`\`\`\n${rawText.trim()}\n\`\`\``;
 	}

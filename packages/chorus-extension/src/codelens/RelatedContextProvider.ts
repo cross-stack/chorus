@@ -16,13 +16,13 @@ export class RelatedContextProvider implements vscode.CodeLensProvider {
 		const codeLenses: vscode.CodeLens[] = [];
 		
 		try {
-			// Find relevant context for the current file
+			// find relevant context for the current file
 			const relevantContext = await this.indexer.findRelevantContext(
 				document.fileName
 			);
 
 			if (relevantContext.length > 0) {
-				// Add CodeLens at the top of the file
+				// add CodeLens at the top of the file
 				const range = new vscode.Range(0, 0, 0, 0);
 				const codeLens = new vscode.CodeLens(range, {
 					title: 'Related context (' + relevantContext.length + ')',
@@ -32,7 +32,7 @@ export class RelatedContextProvider implements vscode.CodeLensProvider {
 				codeLenses.push(codeLens);
 			}
 
-			// Look for function/class definitions and add context for them
+			// look for function/class definitions and add context for them
 			const text = document.getText();
 			const functionMatches = text.matchAll(/(?:function|class|interface|type)\s+(\w+)/g);
 			

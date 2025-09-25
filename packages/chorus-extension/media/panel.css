@@ -62,7 +62,7 @@ body {
     display: block;
 }
 
-/* Context Tab Styles */
+/* context tab styles */
 .search-section {
     display: flex;
     gap: 8px;
@@ -147,7 +147,7 @@ body {
     line-height: 1.4;
 }
 
-/* Evidence Tab Styles */
+/* evidence Tab Styles */
 .evidence-form {
     max-width: 600px;
 }
@@ -200,7 +200,7 @@ body {
     outline-offset: -1px;
 }
 
-/* Equity Tab Styles */
+/* equity Tab Styles */
 .ballot-form {
     max-width: 500px;
 }
@@ -249,26 +249,26 @@ body {
     border-radius: 3px;
 }
 
-/* Accessibility improvements */
+/* accessibility improvements */
 @media (prefers-reduced-motion: reduce) {
     .tab-button {
         transition: none;
     }
 }
 
-/* High contrast mode adjustments */
+/* high contrast mode adjustments */
 @media (prefers-contrast: high) {
     .result-item,
     .ballot-item {
         border-width: 2px;
     }
-    
+
     .tab-button.active {
         border-bottom-width: 3px;
     }
 }
 
-/* Focus indicators for keyboard navigation */
+/* focus indicators for keyboard navigation */
 .tab-button:focus-visible,
 button:focus-visible,
 input:focus-visible,

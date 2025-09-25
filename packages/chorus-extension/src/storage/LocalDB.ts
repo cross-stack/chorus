@@ -34,7 +34,7 @@ export class LocalDB implements vscode.Disposable {
 
 	async initialize(): Promise<void> {
 		try {
-			// Ensure storage directory exists
+			// ensure storage directory exists
 			await fs.mkdir(path.dirname(this.dbPath), { recursive: true });
 
 			this.db = new Database(this.dbPath);
@@ -51,7 +51,7 @@ export class LocalDB implements vscode.Disposable {
 			throw new Error('Database not initialized');
 		}
 
-		// Context entries table
+		// context entries table
 		this.db.exec(`
 			CREATE TABLE IF NOT EXISTS context_entries (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,7 +64,7 @@ export class LocalDB implements vscode.Disposable {
 			)
 		`);
 
-		// Ballots table
+		// ballots table
 		this.db.exec(`
 			CREATE TABLE IF NOT EXISTS ballots (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,7 +78,7 @@ export class LocalDB implements vscode.Disposable {
 			)
 		`);
 
-		// Create indexes for better search performance
+		// create indexes for better search performance
 		this.db.exec(`
 			CREATE INDEX IF NOT EXISTS idx_context_type ON context_entries(type);
 			CREATE INDEX IF NOT EXISTS idx_context_path ON context_entries(path);

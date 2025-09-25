@@ -24,8 +24,8 @@ describe('LocalDB', () => {
 		});
 
 		it('should create tables on initialization', async () => {
-			// Tables should be created during setup
-			// Test by inserting data - if tables don't exist, it will throw
+			// tables should be created during setup
+			// test by inserting data. if tables don't exist, it will throw
 			await expect(db.addContextEntry(mockContextEntry)).resolves.toBeTypeOf('number');
 		});
 
@@ -48,7 +48,7 @@ describe('LocalDB', () => {
 		it('should add multiple context entries with unique IDs', async () => {
 			const id1 = await db.addContextEntry(mockContextEntry);
 			const id2 = await db.addContextEntry(mockDocumentEntry);
-			
+
 			expect(id1).not.toBe(id2);
 			expect(id1).toBeGreaterThan(0);
 			expect(id2).toBeGreaterThan(0);
@@ -89,14 +89,14 @@ describe('LocalDB', () => {
 
 		it('should return empty array when no matches found', async () => {
 			await db.addContextEntry(mockContextEntry);
-			
+
 			const results = await db.searchContext('nonexistent');
 			expect(results).toHaveLength(0);
 		});
 
 		it('should parse metadata correctly', async () => {
 			await db.addContextEntry(mockContextEntry);
-			
+
 			const results = await db.searchContext('authentication');
 			expect(results[0].metadata).toEqual(mockContextEntry.metadata);
 			expect(results[0].metadata.hash).toBe('abc123def');
@@ -104,7 +104,7 @@ describe('LocalDB', () => {
 		});
 
 		it('should limit search results to 50', async () => {
-			// Add more than 50 entries
+			// add more than 50 entries
 			for (let i = 0; i < 60; i++) {
 				await db.addContextEntry({
 					...mockContextEntry,
@@ -142,14 +142,14 @@ describe('LocalDB', () => {
 		});
 
 		it('should validate decision values', async () => {
-			// Valid decisions
+			// valid decisions
 			await expect(db.addBallot({ ...mockBallot, decision: 'approve' })).resolves.toBeDefined();
 			await expect(db.addBallot({ ...mockBallot, decision: 'reject' })).resolves.toBeDefined();
 			await expect(db.addBallot({ ...mockBallot, decision: 'neutral' })).resolves.toBeDefined();
 		});
 
 		it('should validate confidence range', async () => {
-			// Valid confidence values
+			// valid confidence values
 			await expect(db.addBallot({ ...mockBallot, confidence: 1 })).resolves.toBeDefined();
 			await expect(db.addBallot({ ...mockBallot, confidence: 5 })).resolves.toBeDefined();
 		});
@@ -163,7 +163,7 @@ describe('LocalDB', () => {
 			const ballots = await db.getBallotsByPR('#123');
 			expect(ballots[0].revealed).toBe(true);
 
-			// Other PR should not be affected
+			// other PR should not be affected
 			const otherBallots = await db.getBallotsByPR('#456');
 			expect(otherBallots[0].revealed).toBe(false);
 		});
@@ -173,13 +173,14 @@ describe('LocalDB', () => {
 			const ballot2 = { ...mockBallot, rationale: 'Second ballot' };
 
 			await db.addBallot(ballot1);
-			// Small delay to ensure different timestamps
+			// small delay to ensure different timestamps
 			await new Promise(resolve => setTimeout(resolve, 100));
 			await db.addBallot(ballot2);
 
 			const ballots = await db.getBallotsByPR('#123');
 			expect(ballots).toHaveLength(2);
-			// SQLite DATETIME comparison should order properly, but let's be more flexible
+			// SQLite DATETIME comparison should order properly
+			// but let's be more flexible
 			const rationales = ballots.map(b => b.rationale);
 			expect(rationales).toContain('First ballot');
 			expect(rationales).toContain('Second ballot');
@@ -195,16 +196,16 @@ describe('LocalDB', () => {
 
 			const contextResults = await db.searchContext('');
 			const ballots = await db.getBallotsByPR('#123');
-			
+
 			expect(contextResults).toHaveLength(0);
 			expect(ballots).toHaveLength(0);
 		});
 
 		it('should dispose resources properly', async () => {
-			// This mainly tests that dispose doesn't throw
+			// this mainly tests that dispose doesn't throw
 			expect(() => db.dispose()).not.toThrow();
-			
-			// After disposal, operations should fail
+
+			// after disposal, operations should fail
 			await expect(db.addContextEntry(mockContextEntry))
 				.rejects
 				.toThrow('Database not initialized');
@@ -214,15 +215,15 @@ describe('LocalDB', () => {
 	describe('error handling', () => {
 		it('should handle database errors gracefully', async () => {
 			db.dispose(); // Force database to be closed
-			
+
 			await expect(db.addContextEntry(mockContextEntry))
 				.rejects
 				.toThrow('Database not initialized');
 		});
 
 		it('should handle invalid JSON in metadata', async () => {
-			// This is more of a regression test - the system should handle
-			// proper JSON serialization internally
+			// this is more of a regression test
+			// the system should handle proper JSON serialization internally
 			const entryWithComplexMetadata = {
 				...mockContextEntry,
 				metadata: {
@@ -233,7 +234,7 @@ describe('LocalDB', () => {
 			};
 
 			await expect(db.addContextEntry(entryWithComplexMetadata)).resolves.toBeDefined();
-			
+
 			const results = await db.searchContext('authentication');
 			expect(results[0].metadata.nested.data).toEqual(['array', 'of', 'values']);
 		});
@@ -242,9 +243,9 @@ describe('LocalDB', () => {
 	describe('edge cases', () => {
 		it('should handle empty strings in search', async () => {
 			await db.addContextEntry(mockContextEntry);
-			
+
 			const results = await db.searchContext('');
-			expect(results).toHaveLength(1); // Empty search should return all results
+			expect(results).toHaveLength(1); // empty search should return all results
 		});
 
 		it('should handle special characters in search', async () => {
@@ -252,7 +253,7 @@ describe('LocalDB', () => {
 				...mockContextEntry,
 				title: 'feat: add @special #characters & symbols'
 			});
-			
+
 			const results = await db.searchContext('@special');
 			expect(results).toHaveLength(1);
 		});
@@ -262,7 +263,7 @@ describe('LocalDB', () => {
 				...mockContextEntry,
 				title: 'UPPERCASE TITLE'
 			});
-			
+
 			const results = await db.searchContext('uppercase');
 			expect(results).toHaveLength(1);
 		});

@@ -3,7 +3,7 @@ import { Indexer } from './Indexer';
 import { TestDatabase, createMockVSCodeWorkspace } from '../test/testUtils';
 import * as GitService from './GitService';
 
-// Mock vscode module
+// mock vscode module
 vi.mock('vscode', () => ({
 	workspace: {
 		workspaceFolders: [],
@@ -33,7 +33,7 @@ describe('Indexer', () => {
 
 	describe('findRelevantContext', () => {
 		beforeEach(async () => {
-			// Add some test data
+			// add some test data
 			await testDb.db.addContextEntry({
 				type: 'commit',
 				title: 'feat: add user authentication',
@@ -63,7 +63,7 @@ describe('Indexer', () => {
 			const results = await indexer.findRelevantContext('src/auth.ts');
 			
 			expect(results.length).toBeGreaterThan(0);
-			// Should find entries related to 'auth'
+			// should find entries related to 'auth'
 			const authRelated = results.filter(r => 
 				r.title.toLowerCase().includes('auth') || 
 				r.content.toLowerCase().includes('auth')
@@ -75,7 +75,7 @@ describe('Indexer', () => {
 			const results = await indexer.findRelevantContext('src/components/Login.tsx', 'login');
 			
 			expect(results.length).toBeGreaterThan(0);
-			// Should find the commit about login issue
+			// should find the commit about login issue
 			const loginRelated = results.filter(r => 
 				r.title.toLowerCase().includes('login') ||
 				r.content.toLowerCase().includes('login')
@@ -84,7 +84,7 @@ describe('Indexer', () => {
 		});
 
 		it('should limit results to 10', async () => {
-			// Add many entries
+			// add many entries
 			for (let i = 0; i < 15; i++) {
 				await testDb.db.addContextEntry({
 					type: 'commit',
@@ -100,10 +100,10 @@ describe('Indexer', () => {
 		});
 
 		it('should deduplicate results', async () => {
-			// This should return the same entry for multiple query terms
+			// this should return the same entry for multiple query terms
 			const results = await indexer.findRelevantContext('auth/login.ts', 'auth');
 			
-			// Check that there are no duplicate paths
+			// check that there are no duplicate paths
 			const paths = results.map(r => r.path);
 			const uniquePaths = [...new Set(paths)];
 			expect(paths).toHaveLength(uniquePaths.length);
@@ -113,7 +113,7 @@ describe('Indexer', () => {
 			const results = await indexer.findRelevantContext('src/auth.ts');
 			
 			if (results.length > 1) {
-				// Find first commit and first doc
+				// find first commit and first doc
 				const firstCommitIndex = results.findIndex(r => r.type === 'commit');
 				const firstDocIndex = results.findIndex(r => r.type === 'doc');
 				
@@ -156,7 +156,7 @@ describe('Indexer', () => {
 
 			const results = await indexer.findRelevantContext('src/auth.ts');
 			
-			// The entry with 'authentication' in the title should rank higher
+			// the entry with 'authentication' in the title should rank higher
 			// than the one that only mentions it in content
 			if (results.length >= 2) {
 				const titleMatch = results.find(r => r.title.includes('authentication'));
@@ -173,10 +173,10 @@ describe('Indexer', () => {
 
 	describe('indexGitCommits', () => {
 		it('should handle git service errors gracefully', async () => {
-			// Mock git service to throw error
+			// mock git service to throw error
 			vi.spyOn(GitService, 'simpleGitLog').mockRejectedValue(new Error('Git not found'));
 
-			// This should not throw, but log error internally
+			// this should not throw, but log error internally
 			await expect(indexer.indexWorkspace()).resolves.not.toThrow();
 		});
 
@@ -194,7 +194,7 @@ describe('Indexer', () => {
 
 			vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue(mockCommits);
 
-			// Mock vscode workspace
+			// mock vscode workspace
 			const mockVscode = await import('vscode');
 			mockVscode.workspace.workspaceFolders = [{
 				uri: { fsPath: '/test/workspace' },
@@ -204,7 +204,7 @@ describe('Indexer', () => {
 
 			await indexer.indexWorkspace();
 
-			// Check that commit was added to database
+			// check that commit was added to database
 			const results = await testDb.db.searchContext('authentication');
 			expect(results).toHaveLength(1);
 			expect(results[0].type).toBe('commit');
@@ -222,14 +222,14 @@ describe('Indexer', () => {
 			}] as any;
 			mockVscode.workspace.findFiles = vi.fn().mockRejectedValue(new Error('File not found'));
 
-			// This should not throw
+			// this should not throw
 			await expect(indexer.indexWorkspace()).resolves.not.toThrow();
 		});
 
 		it('should extract title from markdown headings', async () => {
 			const mockFileContent = '# API Documentation\n\nThis is the content.';
 
-			// Mock git service to return empty results
+			// mock git service to return empty results
 			vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue([]);
 
 			const mockVscode = await import('vscode');
@@ -244,12 +244,12 @@ describe('Indexer', () => {
 
 			mockVscode.workspace.asRelativePath = vi.fn().mockReturnValue('docs/api.md');
 
-			// Mock the fs module at the module level
+			// mock the fs module at the module level
 			vi.doMock('fs/promises', () => ({
 				readFile: vi.fn().mockResolvedValue(mockFileContent)
 			}));
 
-			// We need to test the indexing manually since the workspace method
+			// we need to test the indexing manually since the workspace method
 			// is complex to mock properly. Let's add a document directly.
 			await testDb.db.addContextEntry({
 				type: 'doc',
@@ -259,7 +259,7 @@ describe('Indexer', () => {
 				metadata: { fileSize: mockFileContent.length, extension: '.md' }
 			});
 
-			// Check that document was indexed with correct title
+			// check that document was indexed with correct title
 			const results = await testDb.db.searchContext('API Documentation');
 			expect(results.length).toBeGreaterThan(0);
 			expect(results[0].title).toBe('API Documentation');

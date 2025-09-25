@@ -91,7 +91,7 @@ jobs:
             const coverage = JSON.parse(fs.readFileSync('coverage-report.json'));
             const { lines, functions, branches, statements } = coverage.summary;
 
-            const comment = `## =Ê Coverage Report
+            const comment = `## =ï¿½ Coverage Report
 
             | Metric | Coverage | Status |
             |--------|----------|--------|
@@ -101,8 +101,8 @@ jobs:
             | Statements | ${statements.pct}% | ${statements.pct >= 80 ? '' : 'L'} |
 
             ${lines.pct >= 80 && functions.pct >= 80 && branches.pct >= 80 && statements.pct >= 80
-              ? '<‰ All coverage thresholds met!'
-              : '  Some coverage thresholds are below 80%'
+              ? '<ï¿½ All coverage thresholds met!'
+              : 'ï¿½ Some coverage thresholds are below 80%'
             }
             `;
 

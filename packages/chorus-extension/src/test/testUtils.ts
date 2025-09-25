@@ -22,7 +22,7 @@ export class TestDatabase {
 		try {
 			await fs.rm(this.tempPath, { recursive: true, force: true });
 		} catch (error) {
-			// Ignore cleanup errors
+			// ignore cleanup errors
 		}
 	}
 }
@@ -97,7 +97,7 @@ export function createMockVSCodeWorkspace(folders: string[]): any {
 		})),
 		asRelativePath: (filePath: string) => path.relative(folders[0] || '', filePath),
 		findFiles: async (_pattern: any) => {
-			// Mock implementation that returns empty array
+			// mock implementation that returns empty array
 			return [];
 		}
 	};

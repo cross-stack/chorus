@@ -1,7 +1,7 @@
 (function() {
     const vscode = acquireVsCodeApi();
 
-    // Tab management
+    // tab management
     function initTabs() {
         const tabButtons = document.querySelectorAll('.tab-button');
         const tabPanes = document.querySelectorAll('.tab-pane');
@@ -9,8 +9,8 @@
         tabButtons.forEach(button => {
             button.addEventListener('click', () => {
                 const targetTab = button.getAttribute('data-tab');
-                
-                // Update button states
+
+                // update button states
                 tabButtons.forEach(b => {
                     b.classList.remove('active');
                     b.setAttribute('aria-selected', 'false');
@@ -18,7 +18,7 @@
                 button.classList.add('active');
                 button.setAttribute('aria-selected', 'true');
 
-                // Update pane states
+                // update pane states
                 tabPanes.forEach(pane => {
                     pane.classList.remove('active');
                 });
@@ -27,7 +27,7 @@
         });
     }
 
-    // Context tab functionality
+    // context tab functionality
     function initContextTab() {
         const searchInput = document.getElementById('context-search');
         const searchButton = document.getElementById('search-button');
@@ -51,13 +51,13 @@
         });
     }
 
-    // Evidence tab functionality
+    // evidence tab functionality
     function initEvidenceTab() {
         const form = document.getElementById('evidence-form');
-        
+
         form.addEventListener('submit', (e) => {
             e.preventDefault();
-            
+
             const tests = document.getElementById('tests-field').value;
             const benchmarks = document.getElementById('benchmarks-field').value;
             const spec = document.getElementById('spec-field').value;
@@ -75,14 +75,14 @@
                 risk: risk
             });
 
-            // Copy to clipboard
+            // copy to clipboard
             navigator.clipboard.writeText(evidenceBlock).then(() => {
                 alert('Evidence block copied to clipboard!');
             });
         });
     }
 
-    // Equity tab functionality
+    // equity tab functionality
     function initEquityTab() {
         const form = document.getElementById('ballot-form');
         const confidenceSlider = document.getElementById('confidence');
@@ -128,7 +128,7 @@
 `.trim();
     }
 
-    // Message handling from extension
+    // message handling from extension
     window.addEventListener('message', event => {
         const message = event.data;
 
@@ -138,7 +138,7 @@
                 break;
             case 'ballotSubmitted':
                 if (message.success) {
-                    document.getElementById('ballot-status').innerHTML = 
+                    document.getElementById('ballot-status').innerHTML =
                         '<div class="success">Ballot submitted successfully!</div>';
                     document.getElementById('ballot-form').reset();
                     document.getElementById('confidence-value').textContent = '3';
@@ -155,7 +155,7 @@
 
     function displaySearchResults(results) {
         const resultsDiv = document.getElementById('context-results');
-        
+
         if (!results || results.length === 0) {
             resultsDiv.innerHTML = '<p>No results found</p>';
             return;
@@ -175,16 +175,16 @@
 
     function displayBallots(ballots) {
         const statusDiv = document.getElementById('ballot-status');
-        
+
         if (!ballots || ballots.length === 0) {
             statusDiv.innerHTML = '<p>No ballots found</p>';
             return;
         }
 
-        statusDiv.innerHTML = '<h3>Revealed Ballots:</h3>' + 
+        statusDiv.innerHTML = '<h3>Revealed Ballots:</h3>' +
             ballots.map(ballot => `
                 <div class="ballot-item">
-                    <strong>${ballot.decision.toUpperCase()}</strong> 
+                    <strong>${ballot.decision.toUpperCase()}</strong>
                     (Confidence: ${ballot.confidence}/5)
                     <p>${escapeHtml(ballot.rationale)}</p>
                 </div>
@@ -197,7 +197,7 @@
         return div.innerHTML;
     }
 
-    // Initialize when DOM is ready
+    // initialize when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
             initTabs();

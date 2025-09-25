@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { RelatedContextProvider } from './RelatedContextProvider';
 import { TestDatabase, createMockVSCodeTextDocument } from '../test/testUtils';
 
-// Mock vscode module
+// mock vscode module
 vi.mock('vscode', () => ({
 	Range: vi.fn().mockImplementation((startLine, startChar, endLine, endChar) => ({
 		start: { line: startLine, character: startChar },
@@ -32,7 +32,7 @@ describe('RelatedContextProvider', () => {
 
 	describe('provideCodeLenses', () => {
 		beforeEach(async () => {
-			// Add test context data
+			// add test context data
 			await testDb.db.addContextEntry({
 				type: 'commit',
 				title: 'feat: add authentication module',
@@ -68,7 +68,7 @@ describe('RelatedContextProvider', () => {
 			expect(Array.isArray(codeLenses)).toBe(true);
 			expect(codeLenses.length).toBeGreaterThan(0);
 
-			// Should have a CodeLens at the top of the file
+			// should have a CodeLens at the top of the file
 			const topLevelLens = codeLenses.find(lens => 
 				lens.range.start.line === 0 && lens.range.start.character === 0
 			);
@@ -80,11 +80,11 @@ describe('RelatedContextProvider', () => {
 		it('should provide CodeLens for functions and classes', async () => {
 			const documentContent = `
 function authenticateUser() {
-	// Implementation
+	// implementation
 }
 
 class UserService {
-	// Class implementation
+	// class implementation
 }
 
 interface UserData {
@@ -100,7 +100,7 @@ type AuthResult = {
 
 			const codeLenses = await provider.provideCodeLenses(document, token);
 
-			// Should find CodeLens for UserService since we have related context
+			// should find CodeLens for UserService since we have related context
 			const userServiceLens = codeLenses.find(lens => 
 				lens.command.title.includes('UserService')
 			);
@@ -121,7 +121,7 @@ type AuthResult = {
 
 			expect(codeLenses).toBeDefined();
 			expect(Array.isArray(codeLenses)).toBe(true);
-			// Might be empty or have minimal context
+			// might be empty or have minimal context
 		});
 
 		it('should handle documents with no symbol definitions', async () => {
@@ -132,11 +132,11 @@ type AuthResult = {
 
 			expect(codeLenses).toBeDefined();
 			expect(Array.isArray(codeLenses)).toBe(true);
-			// Should not crash, might have file-level context
+			// should not crash, might have file-level context
 		});
 
 		it('should handle errors gracefully', async () => {
-			// Mock database to throw error
+			// mock database to throw error
 			const brokenProvider = new RelatedContextProvider({
 				findRelevantContext: vi.fn().mockRejectedValue(new Error('Database error'))
 			} as any);
@@ -180,12 +180,12 @@ function unrelatedFunction() {}
 
 			const codeLenses = await provider.provideCodeLenses(document, token);
 
-			// Should have separate CodeLenses for symbols that have relevant context
+			// should have separate CodeLenses for symbols that have relevant context
 			const symbolLenses = codeLenses.filter(lens => 
 				lens.command.title.includes('Related to')
 			);
 
-			// At least one symbol should have related context
+			// at least one symbol should have related context
 			expect(symbolLenses.length).toBeGreaterThanOrEqual(0);
 		});
 
@@ -201,7 +201,7 @@ class SecondClass {}
 
 			const codeLenses = await provider.provideCodeLenses(document, token);
 
-			// Should not crash and should return valid CodeLens array
+			// should not crash and should return valid CodeLens array
 			expect(codeLenses).toBeDefined();
 			expect(Array.isArray(codeLenses)).toBe(true);
 		});
@@ -223,7 +223,7 @@ interface UserService {
 
 			const codeLenses = await provider.provideCodeLenses(document, token);
 
-			// Should handle interface and type definitions
+			// should handle interface and type definitions
 			expect(codeLenses).toBeDefined();
 			expect(Array.isArray(codeLenses)).toBe(true);
 		});
@@ -239,14 +239,14 @@ interface UserService {
 			);
 
 			if (topLevelLens) {
-				// Title should show actual count of related context
+				// title should show actual count of related context
 				const match = topLevelLens.command.title.match(/\((\d+)\)/);
 				expect(match).toBeTruthy();
 				if (match) {
 					const count = parseInt(match[1]);
 					expect(count).toBeGreaterThan(0);
 					
-					// Verify the count matches the context array length
+					// verify the count matches the context array length
 					const contextArray = topLevelLens.command.arguments?.[0]?.context;
 					if (contextArray) {
 						expect(contextArray).toHaveLength(count);

@@ -3,7 +3,7 @@ import { simpleGitLog, getCurrentBranch, GitLogEntry } from './GitService';
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 
-// Mock child_process
+// mock child_process
 vi.mock('child_process');
 
 describe('GitService', () => {
@@ -14,7 +14,7 @@ describe('GitService', () => {
 		mockProcess = new EventEmitter();
 		mockProcess.stdout = new EventEmitter();
 		mockProcess.stderr = new EventEmitter();
-		
+
 		mockSpawn = vi.mocked(spawn);
 		mockSpawn.mockReturnValue(mockProcess);
 	});
@@ -32,10 +32,10 @@ src/types.ts
 def456|Jane Smith|2023-01-02 15:30:00|fix: resolve login bug
 src/login.ts`;
 
-			// Create promise and resolve it after setting up the mock
+			// create promise and resolve it after setting up the mock
 			const promise = simpleGitLog('/test/workspace', 10);
-			
-			// Simulate successful git command
+
+			// simulate successful git command
 			setTimeout(() => {
 				mockProcess.stdout.emit('data', mockOutput);
 				mockProcess.emit('close', 0);
@@ -44,7 +44,7 @@ src/login.ts`;
 			const result = await promise;
 
 			expect(result).toHaveLength(2);
-			
+
 			expect(result[0]).toEqual({
 				hash: 'abc123',
 				author: 'John Doe',
@@ -66,7 +66,7 @@ src/login.ts`;
 
 		it('should call git with correct arguments', async () => {
 			const promise = simpleGitLog('/test/workspace', 50);
-			
+
 			setTimeout(() => {
 				mockProcess.stdout.emit('data', '');
 				mockProcess.emit('close', 0);
@@ -89,7 +89,7 @@ src/login.ts`;
 
 		it('should use default limit when not specified', async () => {
 			const promise = simpleGitLog('/test/workspace');
-			
+
 			setTimeout(() => {
 				mockProcess.stdout.emit('data', '');
 				mockProcess.emit('close', 0);
@@ -97,15 +97,15 @@ src/login.ts`;
 
 			await promise;
 
-			expect(mockSpawn).toHaveBeenCalledWith('git', 
-				expect.arrayContaining(['-50']), 
+			expect(mockSpawn).toHaveBeenCalledWith('git',
+				expect.arrayContaining(['-50']),
 				expect.any(Object)
 			);
 		});
 
 		it('should handle git command failures', async () => {
 			const promise = simpleGitLog('/test/workspace', 10);
-			
+
 			setTimeout(() => {
 				mockProcess.stderr.emit('data', 'fatal: not a git repository');
 				mockProcess.emit('close', 128);
@@ -128,7 +128,7 @@ src/login.ts`;
 
 		it('should handle empty git log output', async () => {
 			const promise = simpleGitLog('/test/workspace', 10);
-			
+
 			setTimeout(() => {
 				mockProcess.stdout.emit('data', '');
 				mockProcess.emit('close', 0);
@@ -144,7 +144,7 @@ abc123|John Doe|2023-01-01|good entry
 another malformed line`;
 
 			const promise = simpleGitLog('/test/workspace', 10);
-			
+
 			setTimeout(() => {
 				mockProcess.stdout.emit('data', mockOutput);
 				mockProcess.emit('close', 0);
@@ -159,7 +159,7 @@ another malformed line`;
 			const mockOutput = `abc123|John Doe|2023-01-01 12:00:00|empty commit`;
 
 			const promise = simpleGitLog('/test/workspace', 10);
-			
+
 			setTimeout(() => {
 				mockProcess.stdout.emit('data', mockOutput);
 				mockProcess.emit('close', 0);
@@ -172,11 +172,11 @@ another malformed line`;
 
 		it('should trim whitespace from files', async () => {
 			const mockOutput = `abc123|John Doe|2023-01-01 12:00:00|commit with files
-  src/file1.ts  
+  src/file1.ts
 	src/file2.ts	`;
 
 			const promise = simpleGitLog('/test/workspace', 10);
-			
+
 			setTimeout(() => {
 				mockProcess.stdout.emit('data', mockOutput);
 				mockProcess.emit('close', 0);
@@ -190,7 +190,7 @@ another malformed line`;
 	describe('getCurrentBranch', () => {
 		it('should return current branch name', async () => {
 			const promise = getCurrentBranch('/test/workspace');
-			
+
 			setTimeout(() => {
 				mockProcess.stdout.emit('data', 'feature/new-feature\n');
 				mockProcess.emit('close', 0);
@@ -202,7 +202,7 @@ another malformed line`;
 
 		it('should call git with correct arguments', async () => {
 			const promise = getCurrentBranch('/test/workspace');
-			
+
 			setTimeout(() => {
 				mockProcess.stdout.emit('data', 'main');
 				mockProcess.emit('close', 0);
@@ -218,7 +218,7 @@ another malformed line`;
 
 		it('should handle git command failures', async () => {
 			const promise = getCurrentBranch('/test/workspace');
-			
+
 			setTimeout(() => {
 				mockProcess.stderr.emit('data', 'fatal: not a git repository');
 				mockProcess.emit('close', 128);
@@ -241,7 +241,7 @@ another malformed line`;
 
 		it('should trim whitespace from branch name', async () => {
 			const promise = getCurrentBranch('/test/workspace');
-			
+
 			setTimeout(() => {
 				mockProcess.stdout.emit('data', '  main  \n');
 				mockProcess.emit('close', 0);
@@ -253,7 +253,7 @@ another malformed line`;
 
 		it('should handle empty output', async () => {
 			const promise = getCurrentBranch('/test/workspace');
-			
+
 			setTimeout(() => {
 				mockProcess.stdout.emit('data', '');
 				mockProcess.emit('close', 0);
@@ -274,7 +274,7 @@ def456|Jane Smith|2023-01-02 15:30:00|fix: bug fix
 src/file3.ts`;
 
 			const promise = simpleGitLog('/test/workspace', 10);
-			
+
 			setTimeout(() => {
 				mockProcess.stdout.emit('data', mockOutput);
 				mockProcess.emit('close', 0);
@@ -293,7 +293,7 @@ src/file3.ts`;
 			const secondChunk = '00:00|commit message\nsrc/file.ts';
 
 			const promise = simpleGitLog('/test/workspace', 10);
-			
+
 			setTimeout(() => {
 				mockProcess.stdout.emit('data', firstChunk);
 				mockProcess.stdout.emit('data', secondChunk);
@@ -308,11 +308,11 @@ src/file3.ts`;
 
 		it('should handle stderr data without immediate failure', async () => {
 			const promise = simpleGitLog('/test/workspace', 10);
-			
+
 			setTimeout(() => {
 				mockProcess.stderr.emit('data', 'warning: some warning\n');
 				mockProcess.stdout.emit('data', 'abc123|John|2023-01-01|commit\n');
-				mockProcess.emit('close', 0); // Success despite stderr
+				mockProcess.emit('close', 0); // success despite stderr
 			}, 0);
 
 			const result = await promise;
