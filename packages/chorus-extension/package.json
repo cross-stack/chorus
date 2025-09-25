@@ -52,6 +52,7 @@
   "devDependencies": {
     "@types/vscode": "^1.80.0",
     "@types/node": "^18.0.0",
+    "@types/glob": "^8.1.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "@vscode/test-electron": "^2.3.0",
@@ -60,8 +61,10 @@
     "eslint": "^8.45.0",
     "prettier": "^3.0.0",
     "typescript": "^5.0.0",
-    "vitest": "^0.34.0",
-    "better-sqlite3": "^8.14.0"
+    "vitest": "^0.34.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "better-sqlite3": "^8.7.0",
+    "glob": "^10.3.0"
+  }
 }
