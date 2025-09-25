@@ -1,0 +1,35 @@
+{
+  "model": "claude-3-5-sonnet-20241022",
+  "defaultMode": "acceptEdits",
+  "permissions": {
+    "allow": [
+      "Read(./**)",
+      "Grep",
+      "Glob",
+      "Bash(npm ci)",
+      "Bash(npm run *)",
+      "Bash(node --version)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(vsce *)",
+      "Bash(curl:*)"
+    ],
+    "deny": [
+      "WebFetch",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Read(./config/credentials.json)",
+      "Read(./build)"
+    ]
+  },
+  "env": {
+    "CI": "true"
+  },
+  "disableBypassPermissionsMode": "disable"
+}

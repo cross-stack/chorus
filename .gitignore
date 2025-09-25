@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Build outputs
+out/
+dist/
+*.vsix
+
+# IDE files
+.vscode/settings.json
+.vscode/launch.json
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Local database
+*.db
+*.sqlite
+*.duckdb
+
+# Environment files
+.env
+.env.local
+
+# Temporary files
+.tmp/
+temp/
