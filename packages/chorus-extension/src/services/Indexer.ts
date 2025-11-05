@@ -5,159 +5,159 @@ import { LocalDB, ContextEntry } from '../storage/LocalDB';
 import { simpleGitLog } from './GitService';
 
 export class Indexer {
-	constructor(private db: LocalDB) {}
+  constructor(private db: LocalDB) {}
 
-	async indexWorkspace(): Promise<void> {
-		const workspaceFolders = vscode.workspace.workspaceFolders;
-		if (!workspaceFolders || workspaceFolders.length === 0) {
-			console.log('No workspace folders found');
-			return;
-		}
+  async indexWorkspace(): Promise<void> {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+      console.log('No workspace folders found');
+      return;
+    }
 
-		console.log('Starting workspace indexing...');
+    console.log('Starting workspace indexing...');
 
-		for (const folder of workspaceFolders) {
-			const folderPath = folder.uri.fsPath;
+    for (const folder of workspaceFolders) {
+      const folderPath = folder.uri.fsPath;
 
-			// index git commits
-			await this.indexGitCommits(folderPath);
+      // index git commits
+      await this.indexGitCommits(folderPath);
 
-			// index documentation
-			await this.indexDocuments(folderPath);
-		}
+      // index documentation
+      await this.indexDocuments(folderPath);
+    }
 
-		console.log('Workspace indexing completed');
-	}
+    console.log('Workspace indexing completed');
+  }
 
-	private async indexGitCommits(workspacePath: string): Promise<void> {
-		try {
-			const commits = await simpleGitLog(workspacePath, 100); // last 100
+  private async indexGitCommits(workspacePath: string): Promise<void> {
+    try {
+      const commits = await simpleGitLog(workspacePath, 100); // last 100
 
-			for (const commit of commits) {
-				const filesString = commit.files.join(', ');
-				const contextEntry: Omit<ContextEntry, 'id' | 'indexed_at'> = {
-					type: 'commit',
-					title: commit.subject,
-					path: commit.hash,
-					content: commit.subject + '\n\n' + commit.body + '\n\nFiles: ' + filesString,
-					metadata: {
-						hash: commit.hash,
-						author: commit.author,
-						date: commit.date,
-						files: commit.files
-					}
-				};
+      for (const commit of commits) {
+        const filesString = commit.files.join(', ');
+        const contextEntry: Omit<ContextEntry, 'id' | 'indexed_at'> = {
+          type: 'commit',
+          title: commit.subject,
+          path: commit.hash,
+          content: commit.subject + '\n\n' + commit.body + '\n\nFiles: ' + filesString,
+          metadata: {
+            hash: commit.hash,
+            author: commit.author,
+            date: commit.date,
+            files: commit.files,
+          },
+        };
 
-				await this.db.addContextEntry(contextEntry);
-			}
+        await this.db.addContextEntry(contextEntry);
+      }
 
-			console.log('Indexed ' + commits.length + ' git commits');
-		} catch (error) {
-			console.error('Failed to index git commits:', error);
-		}
-	}
+      console.log('Indexed ' + commits.length + ' git commits');
+    } catch (error) {
+      console.error('Failed to index git commits:', error);
+    }
+  }
 
-	private async indexDocuments(workspacePath: string): Promise<void> {
-		try {
-			const docPatterns = ['**/README.md', '**/docs/**/*.md', '**/*.md'];
+  private async indexDocuments(workspacePath: string): Promise<void> {
+    try {
+      const docPatterns = ['**/README.md', '**/docs/**/*.md', '**/*.md'];
 
-			for (const pattern of docPatterns) {
-				const files = await vscode.workspace.findFiles(
-					new vscode.RelativePattern(workspacePath, pattern),
-					'**/node_modules/**'
-				);
+      for (const pattern of docPatterns) {
+        const files = await vscode.workspace.findFiles(
+          new vscode.RelativePattern(workspacePath, pattern),
+          '**/node_modules/**'
+        );
 
-				for (const file of files) {
-					await this.indexMarkdownFile(file);
-				}
-			}
+        for (const file of files) {
+          await this.indexMarkdownFile(file);
+        }
+      }
 
-			console.log('Document indexing completed');
-		} catch (error) {
-			console.error('Failed to index documents:', error);
-		}
-	}
+      console.log('Document indexing completed');
+    } catch (error) {
+      console.error('Failed to index documents:', error);
+    }
+  }
 
-	private async indexMarkdownFile(fileUri: vscode.Uri): Promise<void> {
-		try {
-			const content = await fs.readFile(fileUri.fsPath, 'utf-8');
-			const relativePath = vscode.workspace.asRelativePath(fileUri);
+  private async indexMarkdownFile(fileUri: vscode.Uri): Promise<void> {
+    try {
+      const content = await fs.readFile(fileUri.fsPath, 'utf-8');
+      const relativePath = vscode.workspace.asRelativePath(fileUri);
 
-			// extract title from first heading or filename
-			const titleMatch = content.match(/^#\s+(.+)$/m);
-			const title = titleMatch ? titleMatch[1] : path.basename(fileUri.fsPath, '.md');
+      // extract title from first heading or filename
+      const titleMatch = content.match(/^#\s+(.+)$/m);
+      const title = titleMatch ? titleMatch[1] : path.basename(fileUri.fsPath, '.md');
 
-			const contextEntry: Omit<ContextEntry, 'id' | 'indexed_at'> = {
-				type: 'doc',
-				title: title,
-				path: relativePath,
-				content: content,
-				metadata: {
-					fileSize: content.length,
-					extension: path.extname(fileUri.fsPath)
-				}
-			};
+      const contextEntry: Omit<ContextEntry, 'id' | 'indexed_at'> = {
+        type: 'doc',
+        title: title,
+        path: relativePath,
+        content: content,
+        metadata: {
+          fileSize: content.length,
+          extension: path.extname(fileUri.fsPath),
+        },
+      };
 
-			await this.db.addContextEntry(contextEntry);
-		} catch (error) {
-			console.error('Failed to index file ' + fileUri.fsPath + ':', error);
-		}
-	}
+      await this.db.addContextEntry(contextEntry);
+    } catch (error) {
+      console.error('Failed to index file ' + fileUri.fsPath + ':', error);
+    }
+  }
 
-	async findRelevantContext(filePath: string, symbolName?: string): Promise<ContextEntry[]> {
-		const queries: string[] = [];
+  async findRelevantContext(filePath: string, symbolName?: string): Promise<ContextEntry[]> {
+    const queries: string[] = [];
 
-		// add filename-based queries
-		const fileName = path.basename(filePath, path.extname(filePath));
-		queries.push(fileName);
+    // add filename-based queries
+    const fileName = path.basename(filePath, path.extname(filePath));
+    queries.push(fileName);
 
-		// add symbol-based queries if provided
-		if (symbolName) {
-			queries.push(symbolName);
-		}
+    // add symbol-based queries if provided
+    if (symbolName) {
+      queries.push(symbolName);
+    }
 
-		// add directory-based queries
-		const dirName = path.basename(path.dirname(filePath));
-		queries.push(dirName);
+    // add directory-based queries
+    const dirName = path.basename(path.dirname(filePath));
+    queries.push(dirName);
 
-		const allResults: ContextEntry[] = [];
+    const allResults: ContextEntry[] = [];
 
-		for (const query of queries) {
-			const results = await this.db.searchContext(query);
-			allResults.push(...results);
-		}
+    for (const query of queries) {
+      const results = await this.db.searchContext(query);
+      allResults.push(...results);
+    }
 
-		// remove duplicates and rank by relevance
-		const uniqueResults = this.deduplicateAndRank(allResults, queries);
-		return uniqueResults.slice(0, 10); // Top 10 results
-	}
+    // remove duplicates and rank by relevance
+    const uniqueResults = this.deduplicateAndRank(allResults, queries);
+    return uniqueResults.slice(0, 10); // Top 10 results
+  }
 
-	private deduplicateAndRank(entries: ContextEntry[], queries: string[]): ContextEntry[] {
-		const uniqueMap = new Map<string, ContextEntry>();
+  private deduplicateAndRank(entries: ContextEntry[], queries: string[]): ContextEntry[] {
+    const uniqueMap = new Map<string, ContextEntry>();
 
-		// deduplicate by path
-		for (const entry of entries) {
-			const key = entry.type + ':' + entry.path;
-			if (!uniqueMap.has(key)) {
-				uniqueMap.set(key, entry);
-			}
-		}
+    // deduplicate by path
+    for (const entry of entries) {
+      const key = entry.type + ':' + entry.path;
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, entry);
+      }
+    }
 
-		// simple ranking: prefer recent commits and exact matches
-		return Array.from(uniqueMap.values()).sort((a, b) => {
-			// prefer commits over docs
-			if (a.type === 'commit' && b.type !== 'commit') return -1;
-			if (b.type === 'commit' && a.type !== 'commit') return 1;
+    // simple ranking: prefer recent commits and exact matches
+    return Array.from(uniqueMap.values()).sort((a, b) => {
+      // prefer commits over docs
+      if (a.type === 'commit' && b.type !== 'commit') return -1;
+      if (b.type === 'commit' && a.type !== 'commit') return 1;
 
-			// prefer exact title matches
-			const aHasExactMatch = queries.some(q => a.title.toLowerCase().includes(q.toLowerCase()));
-			const bHasExactMatch = queries.some(q => b.title.toLowerCase().includes(q.toLowerCase()));
+      // prefer exact title matches
+      const aHasExactMatch = queries.some((q) => a.title.toLowerCase().includes(q.toLowerCase()));
+      const bHasExactMatch = queries.some((q) => b.title.toLowerCase().includes(q.toLowerCase()));
 
-			if (aHasExactMatch && !bHasExactMatch) return -1;
-			if (bHasExactMatch && !aHasExactMatch) return 1;
+      if (aHasExactMatch && !bHasExactMatch) return -1;
+      if (bHasExactMatch && !aHasExactMatch) return 1;
 
-			// default to indexed_at for tie-breaking (most recent first)
-			return b.indexed_at.localeCompare(a.indexed_at);
-		});
-	}
+      // default to indexed_at for tie-breaking (most recent first)
+      return b.indexed_at.localeCompare(a.indexed_at);
+    });
+  }
 }
