@@ -102,3 +102,78 @@ export function createMockVSCodeWorkspace(folders: string[]): any {
 		}
 	};
 }
+
+/**
+ * Mock git spawn for testing GitConfigService and GitService
+ * Returns a mock child process with configurable stdout/stderr/exit behavior
+ *
+ * @example
+ * ```typescript
+ * const mockProcess = mockGitSpawn('John Doe\n', '', 0);
+ * vi.mocked(spawn).mockReturnValue(mockProcess);
+ * ```
+ */
+export function mockGitSpawn(stdout: string, stderr: string = '', exitCode: number = 0): any {
+	const { EventEmitter } = require('events');
+	const mockProcess = new EventEmitter();
+
+	// add stdout and stderr as event emitters
+	mockProcess.stdout = new EventEmitter();
+	mockProcess.stderr = new EventEmitter();
+
+	// emit data and close events asynchronously
+	setTimeout(() => {
+		if (stdout) {
+			mockProcess.stdout.emit('data', stdout);
+		}
+		if (stderr) {
+			mockProcess.stderr.emit('data', stderr);
+		}
+		mockProcess.emit('close', exitCode);
+	}, 0);
+
+	return mockProcess;
+}
+
+/**
+ * Mock git spawn with error (for testing spawn failures)
+ * Returns a mock process that emits an error event
+ *
+ * @example
+ * ```typescript
+ * const mockProcess = mockGitSpawnError('ENOENT', 'git not found');
+ * vi.mocked(spawn).mockReturnValue(mockProcess);
+ * ```
+ */
+export function mockGitSpawnError(code: string = 'ENOENT', message: string = 'Command not found'): any {
+	const { EventEmitter } = require('events');
+	const mockProcess = new EventEmitter();
+
+	mockProcess.stdout = new EventEmitter();
+	mockProcess.stderr = new EventEmitter();
+
+	// emit error asynchronously
+	setTimeout(() => {
+		const error: any = new Error(message);
+		error.code = code;
+		mockProcess.emit('error', error);
+	}, 0);
+
+	return mockProcess;
+}
+
+/**
+ * Test fixture for git user info
+ */
+export const TEST_GIT_USER = {
+	name: 'Test User',
+	email: 'test@example.com'
+};
+
+/**
+ * Test fixture for alternative git user (for multi-user scenarios)
+ */
+export const TEST_GIT_USER_ALT = {
+	name: 'Jane Reviewer',
+	email: 'jane.reviewer@example.com'
+};
