@@ -4,8 +4,8 @@ import { spawn } from 'child_process';
  * Git user configuration information
  */
 export interface GitUserInfo {
-	name: string;
-	email: string;
+  name: string;
+  email: string;
 }
 
 /**
@@ -20,48 +20,48 @@ export interface GitUserInfo {
  * @returns Promise resolving to stdout string or null if command fails
  */
 export async function executeGitCommand(
-	workspacePath: string,
-	args: string[]
+  workspacePath: string,
+  args: string[]
 ): Promise<string | null> {
-	return new Promise((resolve, reject) => {
-		const gitProcess = spawn('git', args, {
-			cwd: workspacePath,
-			stdio: ['pipe', 'pipe', 'pipe']
-		});
+  return new Promise((resolve, reject) => {
+    const gitProcess = spawn('git', args, {
+      cwd: workspacePath,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
 
-		let stdout = '';
-		let stderr = '';
+    let stdout = '';
+    let stderr = '';
 
-		gitProcess.stdout.on('data', (data) => {
-			stdout += data.toString();
-		});
+    gitProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
 
-		gitProcess.stderr.on('data', (data) => {
-			stderr += data.toString();
-		});
+    gitProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
 
-		gitProcess.on('close', (code) => {
-			// exit code 1 is common for "not found" cases (e.g., config key doesn't exist)
-			// treat as non-error condition by returning null
-			if (code === 1) {
-				resolve(null);
-				return;
-			}
+    gitProcess.on('close', (code) => {
+      // exit code 1 is common for "not found" cases (e.g., config key doesn't exist)
+      // treat as non-error condition by returning null
+      if (code === 1) {
+        resolve(null);
+        return;
+      }
 
-			// other non-zero exit codes indicate actual errors
-			if (code !== 0) {
-				reject(new Error(`Git Command Failed: ${stderr}`));
-				return;
-			}
+      // other non-zero exit codes indicate actual errors
+      if (code !== 0) {
+        reject(new Error(`Git Command Failed: ${stderr}`));
+        return;
+      }
 
-			resolve(stdout.trim());
-		});
+      resolve(stdout.trim());
+    });
 
-		gitProcess.on('error', (error) => {
-			// git executable not found or spawn failed
-			reject(new Error(`Failed to Spawn Git Process: ${error.message}`));
-		});
-	});
+    gitProcess.on('error', (error) => {
+      // git executable not found or spawn failed
+      reject(new Error(`Failed to Spawn Git Process: ${error.message}`));
+    });
+  });
 }
 
 /**
@@ -85,23 +85,23 @@ export async function executeGitCommand(
  * }
  */
 export async function getGitUserInfo(workspacePath: string): Promise<GitUserInfo | null> {
-	try {
-		// fetch both config values in parallel for efficiency
-		const [name, email] = await Promise.all([
-			executeGitCommand(workspacePath, ['config', 'user.name']),
-			executeGitCommand(workspacePath, ['config', 'user.email'])
-		]);
+  try {
+    // fetch both config values in parallel for efficiency
+    const [name, email] = await Promise.all([
+      executeGitCommand(workspacePath, ['config', 'user.name']),
+      executeGitCommand(workspacePath, ['config', 'user.email']),
+    ]);
 
-		// both name and email must be present to return valid user info
-		if (!name || !email) {
-			return null;
-		}
+    // both name and email must be present to return valid user info
+    if (!name || !email) {
+      return null;
+    }
 
-		return { name, email };
-	} catch (error) {
-		// git not available or config not set - return null to allow graceful fallback
-		return null;
-	}
+    return { name, email };
+  } catch (error) {
+    // git not available or config not set - return null to allow graceful fallback
+    return null;
+  }
 }
 
 /**
@@ -112,10 +112,10 @@ export async function getGitUserInfo(workspacePath: string): Promise<GitUserInfo
  * @returns Promise resolving to true if git is available, false otherwise
  */
 export async function isGitAvailable(): Promise<boolean> {
-	try {
-		const result = await executeGitCommand('', ['--version']);
-		return result !== null;
-	} catch (error) {
-		return false;
-	}
+  try {
+    const result = await executeGitCommand('', ['--version']);
+    return result !== null;
+  } catch (error) {
+    return false;
+  }
 }
