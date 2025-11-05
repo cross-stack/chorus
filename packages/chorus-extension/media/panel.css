@@ -277,3 +277,185 @@ textarea:focus-visible {
     outline: 2px solid var(--vscode-focusBorder);
     outline-offset: 2px;
 }
+
+/* blinded review phase ui styles */
+.phase-section {
+    margin-bottom: 24px;
+    padding: 16px;
+    background-color: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+}
+
+.phase-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+    margin-bottom: 12px;
+}
+
+.phase-badge.blinded {
+    background-color: var(--vscode-inputValidation-warningBackground);
+    color: var(--vscode-inputValidation-warningForeground);
+    border: 1px solid var(--vscode-inputValidation-warningBorder);
+}
+
+.phase-badge.revealed {
+    background-color: var(--vscode-inputValidation-infoBackground);
+    color: var(--vscode-inputValidation-infoForeground);
+    border: 1px solid var(--vscode-inputValidation-infoBorder);
+}
+
+.phase-icon {
+    font-size: 1.2em;
+    line-height: 1;
+}
+
+.phase-label {
+    font-weight: 600;
+}
+
+.ballot-count {
+    margin: 8px 0;
+    font-size: 0.95em;
+    color: var(--vscode-descriptionForeground);
+    font-weight: 500;
+}
+
+.equity-help-text {
+    margin: 8px 0 0 0;
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+    font-style: italic;
+    line-height: 1.4;
+}
+
+/* start review button */
+.primary-button,
+#start-review-button {
+    display: inline-block;
+    padding: 10px 20px;
+    margin-bottom: 20px;
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: inherit;
+    font-weight: 600;
+    transition: background-color 0.2s ease;
+}
+
+.primary-button:hover,
+#start-review-button:hover {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+.primary-button:focus,
+#start-review-button:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+/* reveal button with locked state */
+.reveal-button {
+    display: inline-block;
+    margin-top: 16px;
+    padding: 10px 20px;
+    background-color: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: inherit;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.reveal-button:hover:not(:disabled) {
+    background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+.reveal-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: var(--vscode-button-secondaryBackground);
+}
+
+.reveal-button:focus:not(:disabled) {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+/* error and success messages */
+.error-message {
+    background-color: var(--vscode-inputValidation-errorBackground);
+    color: var(--vscode-inputValidation-errorForeground);
+    border: 1px solid var(--vscode-inputValidation-errorBorder);
+    padding: 10px 12px;
+    border-radius: 3px;
+    margin-top: 12px;
+    font-size: 0.95em;
+}
+
+.success {
+    background-color: var(--vscode-testing-iconPassed);
+    color: var(--vscode-editor-background);
+    padding: 10px 12px;
+    border-radius: 3px;
+    margin-top: 12px;
+    font-size: 0.95em;
+    font-weight: 500;
+}
+
+/* ballot threshold progress display */
+.ballot-threshold {
+    margin: 12px 0;
+}
+
+.threshold-progress {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.progress-bar {
+    flex: 1;
+    height: 8px;
+    background-color: var(--vscode-progressBar-background);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background-color: var(--vscode-progressBar-background);
+    transition: width 0.3s ease;
+}
+
+/* accessibility improvements for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    .tab-button,
+    .primary-button,
+    .reveal-button,
+    .progress-fill {
+        transition: none;
+    }
+}
+
+/* high contrast mode adjustments */
+@media (prefers-contrast: high) {
+    .phase-badge {
+        border-width: 2px;
+    }
+
+    .error-message,
+    .success {
+        border-width: 2px;
+    }
+}
