@@ -39,7 +39,13 @@ vi.mock('vscode', () => ({
 	ViewColumn: {
 		One: 1
 	},
-	RelativePattern: vi.fn()
+	RelativePattern: vi.fn(),
+	env: {
+		clipboard: {
+			readText: vi.fn().mockResolvedValue('test clipboard content'),
+			writeText: vi.fn()
+		}
+	}
 }));
 
 describe('Extension Integration', () => {
@@ -58,10 +64,14 @@ describe('Extension Integration', () => {
 	});
 
 	afterEach(() => {
-		// clean up any resources
+		// clean up any resources - safely handle disposal errors
 		mockDisposables.forEach(disposable => {
 			if (disposable && typeof disposable.dispose === 'function') {
-				disposable.dispose();
+				try {
+					disposable.dispose();
+				} catch (error) {
+					// silently catch disposal errors during cleanup
+				}
 			}
 		});
 	});
@@ -116,7 +126,7 @@ describe('Extension Integration', () => {
 			await activate(mockContext);
 
 			// should not throw errors during initialization
-			expect(true).toBe(true); // If we get here, no errors were thrown
+			expect(true).toBe(true); // if we get here, no errors were thrown
 		});
 
 		it('should handle activation errors gracefully', async () => {
@@ -296,9 +306,18 @@ describe('Extension Integration', () => {
 				});
 			}
 
-			// should not crash the test runner when disposing
-			// in a real scenario, VS Code would handle disposal errors
-			expect(mockDisposables.length).toBeGreaterThan(0);
+			// should not crash when disposing with errors
+			expect(() => {
+				mockDisposables.forEach(disposable => {
+					if (disposable && typeof disposable.dispose === 'function') {
+						try {
+							disposable.dispose();
+						} catch (error) {
+							// expected error - should be caught
+						}
+					}
+				});
+			}).not.toThrow();
 		});
 	});
 

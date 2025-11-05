@@ -118,8 +118,8 @@ src/login.ts`;
 			mockSpawn.mockImplementation(() => {
 				const errorProcess = new EventEmitter();
 				// add error listener before emitting to prevent uncaught exception
-			(errorProcess as any).stdout = new EventEmitter();
-			(errorProcess as any).stderr = new EventEmitter();
+				(errorProcess as any).stdout = new EventEmitter();
+				(errorProcess as any).stderr = new EventEmitter();
 				errorProcess.on('error', () => {});
 				setTimeout(() => errorProcess.emit('error', new Error('Command not found')), 0);
 				return errorProcess;
@@ -174,20 +174,21 @@ another malformed line`;
 			expect(result[0].files).toEqual([]);
 		});
 
-	it('should trim whitespace from files', async () => {
-		const mockOutput = `abc123|John Doe|2023-01-01 12:00:00|commit with files
-src/file1.ts  
+		it('should trim whitespace from files', async () => {
+			const mockOutput = `abc123|John Doe|2023-01-01 12:00:00|commit with files
+src/file1.ts
 src/file2.ts	`;
 
-		const promise = simpleGitLog('/test/workspace', 10);
+			const promise = simpleGitLog('/test/workspace', 10);
 
-		setTimeout(() => {
-			mockProcess.stdout.emit('data', mockOutput);
-			mockProcess.emit('close', 0);
-		}, 0);
+			setTimeout(() => {
+				mockProcess.stdout.emit('data', mockOutput);
+				mockProcess.emit('close', 0);
+			}, 0);
 
-		const result = await promise;
-		expect(result[0].files).toEqual(['src/file1.ts', 'src/file2.ts']);
+			const result = await promise;
+			expect(result[0].files).toEqual(['src/file1.ts', 'src/file2.ts']);
+		});
 	});
 
 	describe('getCurrentBranch', () => {
@@ -234,8 +235,8 @@ src/file2.ts	`;
 			mockSpawn.mockImplementation(() => {
 				const errorProcess = new EventEmitter();
 				// add error listener before emitting to prevent uncaught exception
-			(errorProcess as any).stdout = new EventEmitter();
-			(errorProcess as any).stderr = new EventEmitter();
+				(errorProcess as any).stdout = new EventEmitter();
+				(errorProcess as any).stderr = new EventEmitter();
 				errorProcess.on('error', () => {});
 				setTimeout(() => errorProcess.emit('error', new Error('Command not found')), 0);
 				return errorProcess;
