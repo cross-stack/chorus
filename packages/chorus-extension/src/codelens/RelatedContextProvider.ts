@@ -24,8 +24,8 @@ export class RelatedContextProvider implements vscode.CodeLensProvider {
         const range = new vscode.Range(0, 0, 0, 0);
         const codeLens = new vscode.CodeLens(range, {
           title: 'Related context (' + relevantContext.length + ')',
-          command: 'chorus.showPanel',
-          arguments: [{ filePath: document.fileName, context: relevantContext }],
+          command: 'chorus.showContextPeek',
+          arguments: [range, relevantContext],
         });
         codeLenses.push(codeLens);
       }
@@ -43,14 +43,8 @@ export class RelatedContextProvider implements vscode.CodeLensProvider {
           const range = new vscode.Range(position, position);
           const codeLens = new vscode.CodeLens(range, {
             title: 'Related to ' + symbolName + ' (' + symbolContext.length + ')',
-            command: 'chorus.showPanel',
-            arguments: [
-              {
-                filePath: document.fileName,
-                symbolName,
-                context: symbolContext,
-              },
-            ],
+            command: 'chorus.showContextPeek',
+            arguments: [range, symbolContext],
           });
           codeLenses.push(codeLens);
         }

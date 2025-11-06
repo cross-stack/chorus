@@ -77,7 +77,7 @@ describe('RelatedContextProvider', () => {
       );
       expect(topLevelLens).toBeDefined();
       expect(topLevelLens?.command.title).toMatch(/Related context \(\d+\)/);
-      expect(topLevelLens?.command.command).toBe('chorus.showPanel');
+      expect(topLevelLens?.command.command).toBe('chorus.showContextPeek');
     });
 
     it('should provide CodeLens for functions and classes', async () => {
@@ -106,12 +106,9 @@ type AuthResult = {
       // should find CodeLens for UserService since we have related context
       const userServiceLens = codeLenses.find((lens) => lens.command.title.includes('UserService'));
       expect(userServiceLens).toBeDefined();
-      expect(userServiceLens?.command.arguments?.[0]).toEqual(
-        expect.objectContaining({
-          filePath: 'src/services/UserService.ts',
-          symbolName: 'UserService',
-        })
-      );
+      // arguments are now [range, items] for showContextPeek command
+      expect(userServiceLens?.command.arguments?.[0]).toBeDefined(); // range
+      expect(userServiceLens?.command.arguments?.[1]).toEqual(expect.any(Array)); // items
     });
 
     it('should return empty array when no relevant context found', async () => {
@@ -168,12 +165,9 @@ type AuthResult = {
         (lens) => lens.range.start.line === 0 && lens.range.start.character === 0
       );
 
-      expect(topLevelLens?.command.arguments?.[0]).toEqual(
-        expect.objectContaining({
-          filePath: 'src/auth.ts',
-          context: expect.any(Array),
-        })
-      );
+      // arguments are now [range, items] for showContextPeek command
+      expect(topLevelLens?.command.arguments?.[0]).toBeDefined(); // range
+      expect(topLevelLens?.command.arguments?.[1]).toEqual(expect.any(Array)); // items
     });
 
     it('should create different CodeLens for symbols with context', async () => {
