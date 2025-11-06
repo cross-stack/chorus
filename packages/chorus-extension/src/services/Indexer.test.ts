@@ -286,4 +286,260 @@ describe('Indexer', () => {
       await expect(indexer.indexWorkspace()).resolves.not.toThrow();
     });
   });
+
+  describe('bm25 ranking', () => {
+    it('should rank results by relevance using bm25', async () => {
+      // add three context entries with varying relevance to 'testing'
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'React Testing Guide',
+        path: 'docs/testing.md',
+        content: 'testing testing testing react components unit testing integration testing',
+        metadata: { fileSize: 100 },
+      });
+
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'API Documentation',
+        path: 'docs/api.md',
+        content: 'api endpoints rest http testing mentioned once here',
+        metadata: { fileSize: 100 },
+      });
+
+      await testDb.db.addContextEntry({
+        type: 'commit',
+        title: 'fix: update config',
+        path: 'hash123',
+        content: 'updated configuration file for production',
+        metadata: { hash: 'hash123' },
+      });
+
+      const results = await indexer.findRelevantContext('test.tsx', 'testing');
+
+      // most relevant (testing guide with high tf) should be first
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].title).toBe('React Testing Guide');
+    });
+
+    it('should handle rare terms with higher idf scores', async () => {
+      // add entries with common and rare terms
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'Common Terms Document',
+        path: 'docs/common.md',
+        content: 'the the the the the the the',
+        metadata: { fileSize: 50 },
+      });
+
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'Unique Quantum Physics Guide',
+        path: 'docs/quantum.md',
+        content: 'quantum entanglement superposition measurement',
+        metadata: { fileSize: 50 },
+      });
+
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'Another Document',
+        path: 'docs/other.md',
+        content: 'something else entirely unrelated',
+        metadata: { fileSize: 50 },
+      });
+
+      const results = await indexer.findRelevantContext('quantum.ts', 'quantum');
+
+      // rare term 'quantum' should rank quantum physics guide first
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].title).toBe('Unique Quantum Physics Guide');
+    });
+
+    it('should normalize by document length', async () => {
+      // add short document with one occurrence
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'Short Authentication Doc',
+        path: 'docs/short-auth.md',
+        content: 'authentication',
+        metadata: { fileSize: 20 },
+      });
+
+      // add long document with one occurrence
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'Long Verbose Document',
+        path: 'docs/long.md',
+        content:
+          'authentication is important but this document has lots and lots ' +
+          'of other content that dilutes the relevance of the single mention ' +
+          'of the search term making it less relevant overall despite having ' +
+          'the same term frequency count as the shorter document',
+        metadata: { fileSize: 200 },
+      });
+
+      const results = await indexer.findRelevantContext('auth.ts', 'authentication');
+
+      // short doc should rank higher due to length normalization
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].title).toBe('Short Authentication Doc');
+    });
+
+    it('should handle empty queries gracefully', async () => {
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'Test Document',
+        path: 'docs/test.md',
+        content: 'content here',
+        metadata: { fileSize: 50 },
+      });
+
+      // empty filename and no symbol should still work
+      const results = await indexer.findRelevantContext('', '');
+      expect(results).toBeDefined();
+      expect(Array.isArray(results)).toBe(true);
+    });
+
+    it('should handle queries with special characters', async () => {
+      await testDb.db.addContextEntry({
+        type: 'commit',
+        title: 'feat: add user-auth module',
+        path: 'hash456',
+        content: 'Implemented user@auth with special-chars_123',
+        metadata: { hash: 'hash456' },
+      });
+
+      const results = await indexer.findRelevantContext('user-auth.ts', 'user@auth');
+
+      // should tokenize and match despite special characters
+      expect(results.length).toBeGreaterThan(0);
+    });
+
+    it('should handle single-term queries', async () => {
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'Database Guide',
+        path: 'docs/database.md',
+        content: 'database connection pooling queries indexes',
+        metadata: { fileSize: 100 },
+      });
+
+      const results = await indexer.findRelevantContext('db.ts');
+
+      // should find results even with abbreviated filename
+      expect(results).toBeDefined();
+      expect(Array.isArray(results)).toBe(true);
+    });
+
+    it('should rank multi-term matches higher', async () => {
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'React Testing Library Guide',
+        path: 'docs/react-testing.md',
+        content: 'react testing library components hooks testing utilities',
+        metadata: { fileSize: 100 },
+      });
+
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'React Documentation',
+        path: 'docs/react.md',
+        content: 'react framework components jsx hooks state props',
+        metadata: { fileSize: 100 },
+      });
+
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'Testing Best Practices',
+        path: 'docs/testing.md',
+        content: 'testing unit integration e2e coverage mocking',
+        metadata: { fileSize: 100 },
+      });
+
+      const results = await indexer.findRelevantContext('react-test.tsx', 'testing');
+
+      // document matching both 'react' and 'testing' should rank highest
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].title).toBe('React Testing Library Guide');
+    });
+
+    it('should filter single-character tokens', async () => {
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'C Programming Guide',
+        path: 'docs/c-lang.md',
+        content: 'c programming language pointers memory',
+        metadata: { fileSize: 100 },
+      });
+
+      // single character 'c' should be filtered during tokenization
+      const results = await indexer.findRelevantContext('test.c', 'c');
+
+      // should still return results based on other query terms
+      expect(results).toBeDefined();
+      expect(Array.isArray(results)).toBe(true);
+    });
+
+    it('should handle no matching results', async () => {
+      await testDb.db.addContextEntry({
+        type: 'doc',
+        title: 'Unrelated Document',
+        path: 'docs/unrelated.md',
+        content: 'completely unrelated content',
+        metadata: { fileSize: 100 },
+      });
+
+      const results = await indexer.findRelevantContext(
+        'nonexistent-xyz-file.ts',
+        'nonexistent-symbol'
+      );
+
+      // should return empty array when no matches
+      expect(results).toBeDefined();
+      expect(Array.isArray(results)).toBe(true);
+    });
+
+    it('should deduplicate before ranking', async () => {
+      // add entry that matches multiple query terms
+      await testDb.db.addContextEntry({
+        type: 'commit',
+        title: 'feat: add auth service',
+        path: 'hash789',
+        content: 'authentication service implementation',
+        metadata: { hash: 'hash789' },
+      });
+
+      // query with overlapping terms that would return same entry
+      const results = await indexer.findRelevantContext('services/auth-service.ts', 'auth');
+
+      // should not have duplicates
+      const paths = results.map((r) => r.path);
+      const uniquePaths = [...new Set(paths)];
+      expect(paths).toHaveLength(uniquePaths.length);
+    });
+
+    it('should maintain performance with many documents', async () => {
+      // add 50 documents
+      for (let i = 0; i < 50; i++) {
+        await testDb.db.addContextEntry({
+          type: 'doc',
+          title: 'Document ' + i,
+          path: 'docs/doc' + i + '.md',
+          content:
+            'content with various terms database testing auth user component ' +
+            'render hook state props context provider consumer reducer action ' +
+            'dispatch middleware thunk saga effect observable stream pipe',
+          metadata: { fileSize: 200 },
+        });
+      }
+
+      const startTime = Date.now();
+      const results = await indexer.findRelevantContext('component.tsx', 'testing');
+      const endTime = Date.now();
+
+      // should complete in reasonable time (<200ms for 50 docs)
+      expect(endTime - startTime).toBeLessThan(200);
+      expect(results).toBeDefined();
+      expect(results.length).toBeLessThanOrEqual(10);
+    });
+  });
 });

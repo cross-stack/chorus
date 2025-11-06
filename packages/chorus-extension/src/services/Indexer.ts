@@ -24,6 +24,9 @@ export class Indexer {
 
       // index documentation
       await this.indexDocuments(folderPath);
+
+      // TODO: fetch github pr descriptions and index them for search
+      // TODO: include github issue comments in relevance scoring
     }
 
     console.log('Workspace indexing completed');
@@ -127,15 +130,25 @@ export class Indexer {
       allResults.push(...results);
     }
 
-    // remove duplicates and rank by relevance
-    const uniqueResults = this.deduplicateAndRank(allResults, queries);
-    return uniqueResults.slice(0, 10); // Top 10 results
+    // deduplicate results
+    const uniqueResults = this.deduplicate(allResults);
+
+    // apply bm25 ranking
+    const combinedQuery = queries.join(' ');
+    const rankedResults = this.calculateBM25(combinedQuery, uniqueResults);
+
+    return rankedResults.slice(0, 10); // top 10 results
   }
 
-  private deduplicateAndRank(entries: ContextEntry[], queries: string[]): ContextEntry[] {
+  /**
+   * Removes duplicate context entries based on type and path.
+   * @param entries - Array of context entries to deduplicate
+   * @returns Array of unique context entries
+   */
+  private deduplicate(entries: ContextEntry[]): ContextEntry[] {
     const uniqueMap = new Map<string, ContextEntry>();
 
-    // deduplicate by path
+    // deduplicate by type:path key
     for (const entry of entries) {
       const key = entry.type + ':' + entry.path;
       if (!uniqueMap.has(key)) {
@@ -143,21 +156,144 @@ export class Indexer {
       }
     }
 
-    // simple ranking: prefer recent commits and exact matches
-    return Array.from(uniqueMap.values()).sort((a, b) => {
-      // prefer commits over docs
-      if (a.type === 'commit' && b.type !== 'commit') return -1;
-      if (b.type === 'commit' && a.type !== 'commit') return 1;
+    return Array.from(uniqueMap.values());
+  }
 
-      // prefer exact title matches
-      const aHasExactMatch = queries.some((q) => a.title.toLowerCase().includes(q.toLowerCase()));
-      const bHasExactMatch = queries.some((q) => b.title.toLowerCase().includes(q.toLowerCase()));
+  /**
+   * Calculates bm25 relevance scores for context entries.
+   * Uses standard parameters: k1=1.5, b=0.75
+   *
+   * bm25 formula:
+   * score = sum over all query terms of:
+   *   idf(term) * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * docLength/avgDocLength))
+   *
+   * @param query - Search query string
+   * @param entries - Context entries to rank
+   * @returns Sorted array of entries (highest score first)
+   */
+  private calculateBM25(query: string, entries: ContextEntry[]): ContextEntry[] {
+    if (entries.length === 0) {
+      return [];
+    }
 
-      if (aHasExactMatch && !bHasExactMatch) return -1;
-      if (bHasExactMatch && !aHasExactMatch) return 1;
+    // tokenize query
+    const queryTerms = this.tokenize(query);
+    if (queryTerms.length === 0) {
+      return entries;
+    }
 
-      // default to indexed_at for tie-breaking (most recent first)
-      return b.indexed_at.localeCompare(a.indexed_at);
+    // bm25 parameters
+    const k1 = 1.5;
+    const b = 0.75;
+
+    // calculate average document length
+    const docLengths = entries.map((entry) => this.getDocumentLength(entry));
+    const avgDocLength = docLengths.reduce((sum, len) => sum + len, 0) / entries.length;
+
+    // calculate idf for each term
+    const idfMap = new Map<string, number>();
+    for (const term of queryTerms) {
+      idfMap.set(term, this.calculateIDF(term, entries));
+    }
+
+    // calculate bm25 score for each document
+    const scoredEntries = entries.map((entry, index) => {
+      let score = 0;
+      const docLength = docLengths[index];
+
+      for (const term of queryTerms) {
+        const tf = this.getTermFrequency(term, entry);
+        const idf = idfMap.get(term) || 0;
+
+        // bm25 formula for single term
+        const numerator = tf * (k1 + 1);
+        const denominator = tf + k1 * (1 - b + (b * docLength) / avgDocLength);
+
+        score += idf * (numerator / denominator);
+      }
+
+      return { entry, score };
     });
+
+    // sort by score descending
+    scoredEntries.sort((a, b) => b.score - a.score);
+
+    return scoredEntries.map((item) => item.entry);
+  }
+
+  /**
+   * Tokenizes text into lowercase terms.
+   * Removes punctuation and splits on whitespace.
+   * @param text - Text to tokenize
+   * @returns Array of lowercase terms
+   */
+  private tokenize(text: string): string[] {
+    // lowercase and remove punctuation
+    const cleaned = text.toLowerCase().replace(/[^\w\s]/g, ' ');
+
+    // split on whitespace and filter empty strings
+    return cleaned
+      .split(/\s+/)
+      .filter((term) => term.length > 0)
+      .filter((term) => term.length > 1); // filter single-character terms
+  }
+
+  /**
+   * Calculates inverse document frequency for a term.
+   * idf = log((N - df + 0.5) / (df + 0.5))
+   * where N is total documents and df is documents containing term
+   * @param term - Search term
+   * @param documents - All documents in corpus
+   * @returns IDF score
+   */
+  private calculateIDF(term: string, documents: ContextEntry[]): number {
+    const totalDocs = documents.length;
+
+    // count documents containing term
+    // TODO: cache github api responses to minimize rate limit usage
+    let docsWithTerm = 0;
+    for (const doc of documents) {
+      const content = (doc.title + ' ' + doc.content).toLowerCase();
+      if (content.includes(term)) {
+        docsWithTerm++;
+      }
+    }
+
+    // bm25 idf formula (with smoothing)
+    const idf = Math.log((totalDocs - docsWithTerm + 0.5) / (docsWithTerm + 0.5) + 1.0);
+    return Math.max(0, idf); // ensure non-negative
+  }
+
+  /**
+   * Calculates term frequency in a document.
+   * Counts occurrences of term in title and content.
+   * @param term - Search term
+   * @param document - Context entry to search
+   * @returns Number of term occurrences
+   */
+  private getTermFrequency(term: string, document: ContextEntry): number {
+    const content = (document.title + ' ' + document.content).toLowerCase();
+    const tokens = this.tokenize(content);
+
+    // count occurrences of term
+    let count = 0;
+    for (const token of tokens) {
+      if (token === term) {
+        count++;
+      }
+    }
+
+    return count;
+  }
+
+  /**
+   * Calculates document length in tokens.
+   * Used for document length normalization in bm25.
+   * @param document - Context entry
+   * @returns Number of tokens in document
+   */
+  private getDocumentLength(document: ContextEntry): number {
+    const content = document.title + ' ' + document.content;
+    return this.tokenize(content).length;
   }
 }

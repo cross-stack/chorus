@@ -13,6 +13,8 @@ vi.mock('vscode', () => ({
     activeTextEditor: null,
     showInformationMessage: vi.fn(),
     showErrorMessage: vi.fn(),
+    showInputBox: vi.fn(),
+    showQuickPick: vi.fn(),
     createWebviewPanel: vi.fn().mockReturnValue({
       webview: {
         html: '',
@@ -24,9 +26,23 @@ vi.mock('vscode', () => ({
       reveal: vi.fn(),
       dispose: vi.fn(),
     }),
+    createTreeView: vi.fn().mockReturnValue({
+      reveal: vi.fn(),
+      dispose: vi.fn(),
+    }),
+    createStatusBarItem: vi.fn().mockReturnValue({
+      text: '',
+      tooltip: '',
+      command: '',
+      show: vi.fn(),
+      hide: vi.fn(),
+      dispose: vi.fn(),
+    }),
+    onDidChangeActiveTextEditor: vi.fn(() => ({ dispose: vi.fn() })),
   },
   languages: {
     registerCodeLensProvider: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+    registerHoverProvider: vi.fn().mockReturnValue({ dispose: vi.fn() }),
   },
   workspace: {
     workspaceFolders: [],
@@ -38,6 +54,7 @@ vi.mock('vscode', () => ({
   },
   ViewColumn: {
     One: 1,
+    Beside: 2,
   },
   RelativePattern: vi.fn(),
   env: {
@@ -45,6 +62,57 @@ vi.mock('vscode', () => ({
       readText: vi.fn().mockResolvedValue('test clipboard content'),
       writeText: vi.fn(),
     },
+  },
+  TreeItem: class {
+    public contextValue?: string;
+    public iconPath?: any;
+    public label: string;
+    public collapsibleState: number;
+    constructor(label: string, collapsibleState: number) {
+      this.label = label;
+      this.collapsibleState = collapsibleState;
+    }
+  },
+  TreeItemCollapsibleState: {
+    None: 0,
+    Collapsed: 1,
+    Expanded: 2,
+  },
+  EventEmitter: class {
+    event = vi.fn();
+    fire = vi.fn();
+  },
+  ThemeIcon: class {
+    constructor(public id: string) {}
+  },
+  Range: class {
+    constructor(
+      public start: any,
+      public end: any
+    ) {}
+  },
+  Hover: class {
+    constructor(
+      public contents: any,
+      public range?: any
+    ) {}
+  },
+  MarkdownString: class {
+    isTrusted = false;
+    supportHtml = false;
+    private content = '';
+
+    appendMarkdown(value: string) {
+      this.content += value;
+    }
+
+    getValue() {
+      return this.content;
+    }
+  },
+  StatusBarAlignment: {
+    Left: 1,
+    Right: 2,
   },
 }));
 
