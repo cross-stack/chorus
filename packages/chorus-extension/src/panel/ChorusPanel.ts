@@ -1,145 +1,271 @@
 import * as vscode from 'vscode';
 import { LocalDB } from '../storage/LocalDB';
+import { getGitUserInfo } from '../services/GitConfigService';
 
 export class ChorusPanel {
-	public static currentPanel: ChorusPanel | undefined;
-	public static readonly viewType = 'chorus.panel';
+  public static currentPanel: ChorusPanel | undefined;
+  public static readonly viewType = 'chorus.panel';
 
-	private readonly panel: vscode.WebviewPanel;
-	private disposables: vscode.Disposable[] = [];
+  private readonly panel: vscode.WebviewPanel;
+  private disposables: vscode.Disposable[] = [];
 
-	public static createOrShow(extensionUri: vscode.Uri, db: LocalDB): void {
-		const column = vscode.window.activeTextEditor
-			? vscode.window.activeTextEditor.viewColumn
-			: undefined;
+  public static createOrShow(extensionUri: vscode.Uri, db: LocalDB): void {
+    const column = vscode.window.activeTextEditor
+      ? vscode.window.activeTextEditor.viewColumn
+      : undefined;
 
-		if (ChorusPanel.currentPanel) {
-			ChorusPanel.currentPanel.panel.reveal(column);
-			return;
-		}
+    if (ChorusPanel.currentPanel) {
+      ChorusPanel.currentPanel.panel.reveal(column);
+      return;
+    }
 
-		const panel = vscode.window.createWebviewPanel(
-			ChorusPanel.viewType,
-			'Chorus',
-			column || vscode.ViewColumn.One,
-			{
-				enableScripts: true,
-				localResourceRoots: [
-					vscode.Uri.joinPath(extensionUri, 'media'),
-					vscode.Uri.joinPath(extensionUri, 'out', 'panel')
-				]
-			}
-		);
+    const panel = vscode.window.createWebviewPanel(
+      ChorusPanel.viewType,
+      'Chorus',
+      column || vscode.ViewColumn.One,
+      {
+        enableScripts: true,
+        localResourceRoots: [
+          vscode.Uri.joinPath(extensionUri, 'media'),
+          vscode.Uri.joinPath(extensionUri, 'out', 'panel'),
+        ],
+      }
+    );
 
-		ChorusPanel.currentPanel = new ChorusPanel(panel, extensionUri, db);
-	}
+    ChorusPanel.currentPanel = new ChorusPanel(panel, extensionUri, db);
+  }
 
-	private constructor(
-		panel: vscode.WebviewPanel,
-		private readonly extensionUri: vscode.Uri,
-		private readonly db: LocalDB
-	) {
-		this.panel = panel;
+  private constructor(
+    panel: vscode.WebviewPanel,
+    private readonly extensionUri: vscode.Uri,
+    private readonly db: LocalDB
+  ) {
+    this.panel = panel;
 
-		this.update();
+    this.update();
 
-		this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
+    this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
 
-		this.panel.webview.onDidReceiveMessage(
-			async (message) => {
-				switch (message.command) {
-					case 'searchContext':
-						await this.handleSearchContext(message.query);
-						return;
-					case 'submitBallot':
-						await this.handleSubmitBallot(message.ballot);
-						return;
-					case 'revealBallots':
-						await this.handleRevealBallots(message.prReference);
-						return;
-				}
-			},
-			null,
-			this.disposables
-		);
-	}
+    this.panel.webview.onDidReceiveMessage(
+      async (message) => {
+        switch (message.command) {
+          case 'searchContext':
+            await this.handleSearchContext(message.query);
+            return;
+          case 'getPRPhase':
+            await this.handleGetPRPhase(message.prReference);
+            return;
+          case 'startBlindedReview':
+            await this.handleStartBlindedReview(message);
+            return;
+          case 'submitBallot':
+            await this.handleSubmitBallot(message.ballot);
+            return;
+          case 'revealBallots':
+            await this.handleRevealBallots(message.prReference);
+            return;
+        }
+      },
+      null,
+      this.disposables
+    );
+  }
 
-	private async handleSearchContext(query: string): Promise<void> {
-		try {
-			const results = await this.db.searchContext(query);
-			await this.panel.webview.postMessage({
-				command: 'searchResults',
-				results: results
-			});
-		} catch (error) {
-			console.error('Search failed:', error);
-			await this.panel.webview.postMessage({
-				command: 'error',
-				message: 'Search failed: ' + error
-			});
-		}
-	}
+  private async handleSearchContext(query: string): Promise<void> {
+    try {
+      const results = await this.db.searchContext(query);
+      await this.panel.webview.postMessage({
+        command: 'searchResults',
+        results: results,
+      });
+    } catch (error) {
+      console.error('Search failed:', error);
+      await this.panel.webview.postMessage({
+        command: 'error',
+        message: 'Search failed: ' + error,
+      });
+    }
+  }
 
-	private async handleSubmitBallot(ballot: any): Promise<void> {
-		try {
-			await this.db.addBallot({
-				pr_reference: ballot.prReference,
-				decision: ballot.decision,
-				confidence: ballot.confidence,
-				rationale: ballot.rationale,
-				author_metadata: JSON.stringify({
-					name: 'Anonymous', // TODO: Get from git config
-					timestamp: new Date().toISOString()
-				}),
-				revealed: false
-			});
+  private async handleGetPRPhase(prReference: string): Promise<void> {
+    try {
+      // fetch current phase for ui rendering
+      const phase = await this.db.getPRPhase(prReference);
+      const ballots = await this.db.getBallotsByPR(prReference);
+      const canReveal = await this.db.canRevealBallots(prReference);
+      const canSubmit = await this.db.canSubmitBallot(prReference);
 
-			await this.panel.webview.postMessage({
-				command: 'ballotSubmitted',
-				success: true
-			});
-		} catch (error) {
-			console.error('Ballot submission failed:', error);
-			await this.panel.webview.postMessage({
-				command: 'error',
-				message: 'Ballot submission failed: ' + error
-			});
-		}
-	}
+      await this.panel.webview.postMessage({
+        command: 'prPhaseUpdate',
+        phaseData: {
+          phase: phase,
+          ballotCount: ballots.length,
+          canReveal: canReveal,
+          canSubmit: canSubmit,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to Get PR Phase:', error);
+      await this.panel.webview.postMessage({
+        command: 'error',
+        message: 'Failed to Get PR Phase: ' + error,
+      });
+    }
+  }
 
-	private async handleRevealBallots(prReference: string): Promise<void> {
-		try {
-			await this.db.revealBallots(prReference);
-			const ballots = await this.db.getBallotsByPR(prReference);
-			
-			await this.panel.webview.postMessage({
-				command: 'ballotsRevealed',
-				ballots: ballots
-			});
-		} catch (error) {
-			console.error('Ballot reveal failed:', error);
-			await this.panel.webview.postMessage({
-				command: 'error',
-				message: 'Ballot reveal failed: ' + error
-			});
-		}
-	}
+  private async handleStartBlindedReview(message: any): Promise<void> {
+    try {
+      const prReference = message.prReference;
+      const threshold = message.threshold || 3;
 
-	private update(): void {
-		this.panel.title = 'Chorus';
-		this.panel.webview.html = this.getHtmlForWebview();
-	}
+      // validate pr reference
+      if (!prReference || !prReference.trim()) {
+        await this.panel.webview.postMessage({
+          command: 'error',
+          message: 'Invalid PR Reference',
+        });
+        return;
+      }
 
-	private getHtmlForWebview(): string {
-		const scriptUri = this.panel.webview.asWebviewUri(
-			vscode.Uri.joinPath(this.extensionUri, 'media', 'panel.js')
-		);
+      // check if pr already has ballots submitted
+      const existingBallots = await this.db.getBallotsByPR(prReference);
 
-		const styleUri = this.panel.webview.asWebviewUri(
-			vscode.Uri.joinPath(this.extensionUri, 'media', 'panel.css')
-		);
+      if (existingBallots.length > 0) {
+        await this.panel.webview.postMessage({
+          command: 'error',
+          message: 'PR Already Exists - Ballots Have Been Submitted',
+        });
+        return;
+      }
 
-		return `<!DOCTYPE html>
+      // initialize pr in blinded phase with threshold
+      await this.db.startBlindedReview(prReference, threshold);
+
+      await this.panel.webview.postMessage({
+        command: 'blindedReviewStarted',
+        success: true,
+        prReference: prReference,
+        threshold: threshold,
+      });
+    } catch (error) {
+      console.error('Failed to Start Blinded Review:', error);
+      await this.panel.webview.postMessage({
+        command: 'error',
+        message: 'Failed to Start Blinded Review: ' + error,
+      });
+    }
+  }
+
+  private async handleSubmitBallot(ballot: any): Promise<void> {
+    try {
+      // check if PR is in blinded phase
+      // ballots can only be submitted during blinded phase
+      const canSubmit = await this.db.canSubmitBallot(ballot.prReference);
+      if (!canSubmit) {
+        await this.panel.webview.postMessage({
+          command: 'error',
+          message: 'Ballots cannot be submitted after the reveal phase has begun',
+        });
+        return;
+      }
+
+      // get git user info from workspace
+      // privacy-preserving: only stored, not immediately displayed
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      const workspacePath = workspaceFolders?.[0]?.uri.fsPath || '';
+
+      const userInfo = await getGitUserInfo(workspacePath);
+      const authorMetadata = {
+        name: userInfo?.name || 'Anonymous',
+        email: userInfo?.email || '',
+        timestamp: new Date().toISOString(),
+      };
+
+      await this.db.addBallot({
+        pr_reference: ballot.prReference,
+        decision: ballot.decision,
+        confidence: ballot.confidence,
+        rationale: ballot.rationale,
+        author_metadata: JSON.stringify(authorMetadata),
+        revealed: false,
+      });
+
+      await this.panel.webview.postMessage({
+        command: 'ballotSubmitted',
+        success: true,
+      });
+    } catch (error) {
+      console.error('Ballot submission failed:', error);
+      await this.panel.webview.postMessage({
+        command: 'error',
+        message: 'Ballot submission failed: ' + error,
+      });
+    }
+  }
+
+  private async handleRevealBallots(prReference: string): Promise<void> {
+    try {
+      // check if ballots can be revealed
+      // phase must be blinded and threshold met
+      const canReveal = await this.db.canRevealBallots(prReference);
+
+      if (!canReveal) {
+        const phase = await this.db.getPRPhase(prReference);
+        const ballots = await this.db.getBallotsByPR(prReference);
+
+        // provide specific error message based on reason
+        if (phase === 'revealed') {
+          await this.panel.webview.postMessage({
+            command: 'error',
+            message: 'Ballots Have Already Been Revealed',
+          });
+        } else if (phase === null) {
+          await this.panel.webview.postMessage({
+            command: 'error',
+            message: 'PR Review Not Started - Use "Start Blinded Review" First',
+          });
+        } else {
+          // phase is blinded but threshold not met
+          await this.panel.webview.postMessage({
+            command: 'error',
+            message: `Cannot Reveal Ballots: Minimum Threshold Not Met (${ballots.length} ballot(s) submitted)`,
+          });
+        }
+        return;
+      }
+
+      // reveal ballots and transition phase
+      await this.db.revealBallots(prReference);
+      const ballots = await this.db.getBallotsByPR(prReference);
+
+      await this.panel.webview.postMessage({
+        command: 'ballotsRevealed',
+        ballots: ballots,
+      });
+    } catch (error) {
+      console.error('Ballot Reveal Failed:', error);
+      await this.panel.webview.postMessage({
+        command: 'error',
+        message: 'Ballot Reveal Failed: ' + error,
+      });
+    }
+  }
+
+  private update(): void {
+    this.panel.title = 'Chorus';
+    this.panel.webview.html = this.getHtmlForWebview();
+  }
+
+  private getHtmlForWebview(): string {
+    const scriptUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'panel.js')
+    );
+
+    const styleUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'panel.css')
+    );
+
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="UTF-8">
@@ -187,10 +313,20 @@ export class ChorusPanel {
 			</div>
 
 			<div id="equity-tab" class="tab-pane" role="tabpanel">
+				<!-- Phase indicator section -->
+				<div id="phase-section" class="phase-section">
+					<p class="equity-help-text">Enter a PR Reference Below to Begin</p>
+				</div>
+
+				<!-- Start review button -->
+				<button id="start-review-button" class="primary-button" style="display: none;">Start Blinded Review</button>
+
+				<!-- Ballot submission form -->
 				<form id="ballot-form" class="ballot-form">
 					<div class="form-group">
 						<label for="pr-reference">PR Reference:</label>
-						<input type="text" id="pr-reference" required placeholder="e.g., #123 or PR URL">
+						<input type="text" id="pr-reference" required placeholder="e.g., #123 or PR URL" aria-describedby="pr-help">
+						<small id="pr-help" class="equity-help-text">Enter PR number or URL to check review status</small>
 					</div>
 					<div class="form-group">
 						<label for="decision">Decision:</label>
@@ -203,35 +339,42 @@ export class ChorusPanel {
 					</div>
 					<div class="form-group">
 						<label for="confidence">Confidence (1-5):</label>
-						<input type="range" id="confidence" min="1" max="5" value="3">
-						<span id="confidence-value">3</span>
+						<input type="range" id="confidence" min="1" max="5" value="3" aria-valuemin="1" aria-valuemax="5" aria-valuenow="3">
+						<span id="confidence-value" aria-live="polite">3</span>
 					</div>
 					<div class="form-group">
 						<label for="rationale">Rationale:</label>
-						<textarea id="rationale" required placeholder="Brief explanation of your decision"></textarea>
+						<textarea id="rationale" required placeholder="Brief explanation of your decision" aria-describedby="rationale-help"></textarea>
+						<small id="rationale-help" class="equity-help-text">Provide reasoning for your decision</small>
 					</div>
 					<button type="submit">Submit Quiet Ballot</button>
 				</form>
+
+				<!-- Reveal button -->
+				<button id="reveal-button" class="reveal-button" disabled aria-label="Reveal Ballots">Reveal Results</button>
+
+				<!-- Status section for ballot display -->
 				<div id="ballot-status" class="status-section"></div>
 			</div>
+
 		</div>
 	</div>
 
 	<script src="${scriptUri}"></script>
 </body>
 </html>`;
-	}
+  }
 
-	public dispose(): void {
-		ChorusPanel.currentPanel = undefined;
+  public dispose(): void {
+    ChorusPanel.currentPanel = undefined;
 
-		this.panel.dispose();
+    this.panel.dispose();
 
-		while (this.disposables.length) {
-			const x = this.disposables.pop();
-			if (x) {
-				x.dispose();
-			}
-		}
-	}
+    while (this.disposables.length) {
+      const x = this.disposables.pop();
+      if (x) {
+        x.dispose();
+      }
+    }
+  }
 }

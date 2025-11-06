@@ -88,11 +88,29 @@ Code reviews should be spaces for learning and evidence-based decision making, n
 - Validate required fields before submission
 - Link to specifications and ADR documents
 
-### Equity Tab
-- Submit anonymous ballots on PR decisions
-- Set confidence levels and provide rationale
-- View aggregated results after first-pass completion
-- Control when to reveal your identity
+### Equity Tab - Blinded First-Pass Reviews
+
+**Psychological Foundation**: Blinded reviews reduce normative influence (conformity pressure) and combat pluralistic ignorance (hidden disagreement).
+
+**Workflow**:
+1. **Start Review**: Enter PR reference and click "Start Blinded Review"
+   - Sets PR to blinded phase (author identities hidden)
+   - Team members can now submit anonymous ballots
+
+2. **Submit Ballots**: Each reviewer provides:
+   - Decision: Approve / Neutral / Reject
+   - Confidence: 1-5 slider (calibrated judgment)
+   - Rationale: Evidence-based reasoning
+
+3. **Reveal Phase**: After minimum threshold (e.g., 3+ ballots):
+   - "Reveal Results" button becomes enabled
+   - Click to transition from blinded → revealed
+   - View all ballots with author names and aggregated results
+
+**Privacy Controls**:
+- Ballots are anonymous during blinded phase
+- Author metadata (from git config) stored but not displayed
+- Voluntary reveal when team is ready
 
 ## 🎮 Commands
 

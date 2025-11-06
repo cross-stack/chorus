@@ -27,17 +27,80 @@
         "command": "chorus.addEvidence",
         "title": "Add Chorus Evidence Block",
         "category": "Chorus"
+      },
+      {
+        "command": "chorus.reindexWorkspace",
+        "title": "Reindex Workspace",
+        "category": "Chorus"
+      },
+      {
+        "command": "chorus.showIndexStatus",
+        "title": "Show Index Status",
+        "category": "Chorus"
+      },
+      {
+        "command": "chorus.quickSubmitBallot",
+        "title": "Submit Ballot (Quick)",
+        "category": "Chorus"
+      },
+      {
+        "command": "chorus.focusContextView",
+        "title": "Focus Context View",
+        "category": "Chorus"
+      },
+      {
+        "command": "chorus.showContextPeek",
+        "title": "Show Context Peek",
+        "category": "Chorus"
+      },
+      {
+        "command": "chorus.viewContextItem",
+        "title": "View Context Item",
+        "category": "Chorus"
+      },
+      {
+        "command": "chorus.viewPRBallots",
+        "title": "View PR Ballots",
+        "category": "Chorus"
       }
     ],
-    "views": {
-      "explorer": [
+    "viewsContainers": {
+      "activitybar": [
         {
-          "id": "chorus.panel",
-          "name": "Chorus",
+          "id": "chorus-sidebar",
+          "title": "Chorus",
+          "icon": "$(organization)"
+        }
+      ]
+    },
+    "views": {
+      "chorus-sidebar": [
+        {
+          "id": "chorus.contextView",
+          "name": "Context Discovery",
           "when": "chorus.enabled"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "chorus.quickSubmitBallot",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "chorus.addEvidence",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "chorus.focusContextView",
+        "key": "ctrl+shift+k",
+        "mac": "cmd+shift+k"
+      }
+    ]
   },
   "scripts": {
     "build": "tsc -p ./",
@@ -49,8 +112,8 @@
     "vsce:package": "vsce package"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "18.x",
+    "@types/sql.js": "^1.4.9",
     "@types/vscode": "^1.74.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
@@ -62,6 +125,6 @@
     "vsce": "^2.15.0"
   },
   "dependencies": {
-    "better-sqlite3": "^8.7.0"
+    "sql.js": "^1.13.0"
   }
 }
