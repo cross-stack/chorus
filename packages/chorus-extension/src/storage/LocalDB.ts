@@ -157,6 +157,16 @@ export class LocalDB implements vscode.Disposable {
 			)
 		`);
 
+    // index_metadata table - tracks indexing state for incremental updates
+    // stores key-value pairs for last indexed commit hash, file modification times, index version
+    this.db.run(`
+			CREATE TABLE IF NOT EXISTS index_metadata (
+				key TEXT PRIMARY KEY,
+				value TEXT NOT NULL,
+				updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			)
+		`);
+
     // create indexes for better search performance
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_context_type ON context_entries(type)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_context_path ON context_entries(path)`);
@@ -201,7 +211,10 @@ export class LocalDB implements vscode.Disposable {
       params.push(type);
     }
 
-    sql += ' ORDER BY indexed_at DESC LIMIT 50';
+    // remove order by clause - ranking happens in indexer using bm25
+    // increase limit since ranking happens after retrieval
+    // TODO: fetch github pr descriptions and index them for search
+    sql += ' LIMIT 100';
 
     const stmt = this.db.prepare(sql);
     stmt.bind(params);
@@ -326,8 +339,108 @@ export class LocalDB implements vscode.Disposable {
     this.db.run('DELETE FROM context_entries');
     this.db.run('DELETE FROM ballots');
     this.db.run('DELETE FROM pr_state');
+    this.db.run('DELETE FROM index_metadata');
 
     await this.persistToFile();
+  }
+
+  /**
+   * Gets a metadata value from the index_metadata table.
+   *
+   * Used to track indexing state such as last indexed commit hash,
+   * file modification times, and index version for incremental updates.
+   *
+   * @param key - The metadata key to retrieve
+   * @returns Promise resolving to the value or null if not found
+   */
+  async getIndexMetadata(key: string): Promise<string | null> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			SELECT value FROM index_metadata
+			WHERE key = ?
+		`);
+
+    stmt.bind([key]);
+
+    let value: string | null = null;
+    if (stmt.step()) {
+      const row = stmt.getAsObject() as { value: string };
+      value = row.value;
+    }
+
+    stmt.free();
+    return value;
+  }
+
+  /**
+   * Sets a metadata value in the index_metadata table.
+   *
+   * Updates existing value or inserts new one if not present.
+   * Automatically updates the updated_at timestamp.
+   *
+   * @param key - The metadata key to set
+   * @param value - The value to store
+   * @returns Promise that resolves when the value is set
+   */
+  async setIndexMetadata(key: string, value: string): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    // implement upsert: try update first, then insert if needed
+    const updateStmt = this.db.prepare(`
+			UPDATE index_metadata
+			SET value = ?,
+				updated_at = CURRENT_TIMESTAMP
+			WHERE key = ?
+		`);
+    updateStmt.bind([value, key]);
+    updateStmt.step();
+    updateStmt.free();
+
+    // check if update affected any rows
+    const changes = this.db.exec('SELECT changes() as count')[0].values[0][0] as number;
+
+    // if no rows were updated, insert new row
+    if (changes === 0) {
+      const insertStmt = this.db.prepare(`
+				INSERT INTO index_metadata (key, value, updated_at)
+				VALUES (?, ?, CURRENT_TIMESTAMP)
+			`);
+      insertStmt.bind([key, value]);
+      insertStmt.step();
+      insertStmt.free();
+    }
+
+    await this.persistToFile();
+  }
+
+  /**
+   * Gets the last indexed commit hash from metadata.
+   *
+   * Used for incremental git indexing to only process new commits
+   * since the last indexing operation.
+   *
+   * @returns Promise resolving to the commit hash or null if not found
+   */
+  async getLastIndexedCommit(): Promise<string | null> {
+    return this.getIndexMetadata('last_indexed_commit');
+  }
+
+  /**
+   * Sets the last indexed commit hash in metadata.
+   *
+   * Called after successfully indexing commits to track the latest
+   * indexed commit for future incremental updates.
+   *
+   * @param commitHash - The git commit hash to store
+   * @returns Promise that resolves when the hash is stored
+   */
+  async setLastIndexedCommit(commitHash: string): Promise<void> {
+    return this.setIndexMetadata('last_indexed_commit', commitHash);
   }
 
   /**

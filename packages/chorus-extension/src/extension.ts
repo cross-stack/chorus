@@ -1,8 +1,12 @@
 import * as vscode from 'vscode';
 import { ChorusPanel } from './panel/ChorusPanel';
-import { LocalDB } from './storage/LocalDB';
-import { Indexer } from './services/Indexer';
+import { LocalDB, ContextEntry } from './storage/LocalDB';
+import { IncrementalIndexer } from './services/IncrementalIndexer';
 import { RelatedContextProvider } from './codelens/RelatedContextProvider';
+import { ContextTreeProvider } from './views/ContextTreeProvider';
+import { ContextHoverProvider } from './providers/ContextHoverProvider';
+import { WelcomePanel } from './walkthrough/WelcomePanel';
+import { Indexer } from './services/Indexer';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   console.log('Activating Chorus extension...');
@@ -15,16 +19,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await db.initialize();
     console.log('Database initialized successfully');
 
-    // initialize services (don't block activation on indexing)
-    console.log('Creating Indexer instance...');
-    const indexer = new Indexer(db);
-    // index workspace in background to avoid blocking activation
+    // create status bar item for indexing progress
+    console.log('Creating status bar item...');
+    const statusBarItem = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Right,
+      100
+    );
+    statusBarItem.command = 'chorus.showIndexStatus';
+    statusBarItem.text = '$(sync~spin) Chorus: Indexing...';
+    statusBarItem.tooltip = 'Indexing workspace for context discovery';
+    statusBarItem.show();
+
+    // initialize incremental indexer
+    console.log('Creating IncrementalIndexer instance...');
+    const incrementalIndexer = new IncrementalIndexer(db, statusBarItem);
+
+    // start file watchers for incremental updates
+    console.log('Starting file watchers...');
+    await incrementalIndexer.startWatching();
+
+    // start background indexing (non-blocking)
     console.log('Starting background workspace indexing...');
-    indexer.indexWorkspace().catch((err) => {
+    incrementalIndexer.indexIncrementally().catch((err) => {
       console.error('Failed to index workspace:', err);
-      vscode.window.showWarningMessage('Chorus: Failed to Index Workspace');
+      vscode.window.showWarningMessage('Chorus: Failed to Index Workspace - Click Status Bar to Retry');
     });
-    console.log('Indexer started');
 
     // register panel command
     console.log('Registering chorus.showPanel command...');
@@ -77,6 +96,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     });
 
+    // register reindex command
+    console.log('Registering chorus.reindexWorkspace command...');
+    const reindexCommand = vscode.commands.registerCommand('chorus.reindexWorkspace', async () => {
+      try {
+        await incrementalIndexer.forceReindex();
+        vscode.window.showInformationMessage('Chorus: Workspace Reindexed Successfully');
+      } catch (error) {
+        console.error('Failed to reindex workspace:', error);
+        vscode.window.showErrorMessage(
+          `Failed to Reindex Workspace: ${error instanceof Error ? error.message : 'Unknown Error'}`
+        );
+      }
+    });
+
+    // register show index status command
+    console.log('Registering chorus.showIndexStatus command...');
+    const showIndexStatusCommand = vscode.commands.registerCommand(
+      'chorus.showIndexStatus',
+      async () => {
+        try {
+          const lastCommit = await db.getLastIndexedCommit();
+          const totalItems = await db.searchContext('');
+
+          const message = `**Chorus Index Status**
+
+**Total Items**: ${totalItems.length} entries indexed
+**Last Indexed Commit**: ${lastCommit || 'None'}
+
+**Actions**:
+- Click "Reindex" below to force a complete reindex
+- File changes are automatically detected and indexed`;
+
+          const action = await vscode.window.showInformationMessage(
+            message,
+            'Reindex',
+            'Close'
+          );
+
+          if (action === 'Reindex') {
+            await vscode.commands.executeCommand('chorus.reindexWorkspace');
+          }
+        } catch (error) {
+          console.error('Failed to show index status:', error);
+          vscode.window.showErrorMessage('Failed to Retrieve Index Status');
+        }
+      }
+    );
+
     // register CodeLens provider
     console.log('Registering CodeLens provider...');
     const codeLensProvider = new RelatedContextProvider(db);
@@ -85,12 +152,239 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       codeLensProvider
     );
 
+    // register tree view provider
+    console.log('Registering context tree view...');
+    const indexer = new Indexer(db);
+    const treeProvider = new ContextTreeProvider(db, indexer);
+    const treeView = vscode.window.createTreeView('chorus.contextView', {
+      treeDataProvider: treeProvider,
+      showCollapseAll: true,
+    });
+
+    // register hover provider
+    console.log('Registering hover provider...');
+    const hoverProvider = new ContextHoverProvider(indexer);
+    const hoverDisposable = vscode.languages.registerHoverProvider(
+      { scheme: 'file', pattern: '**/*' },
+      hoverProvider
+    );
+
+    // register context peek command
+    console.log('Registering chorus.showContextPeek command...');
+    const contextPeekCommand = vscode.commands.registerCommand(
+      'chorus.showContextPeek',
+      async (_range: vscode.Range, items: ContextEntry[]) => {
+        // create webview panel positioned beside editor
+        const panel = vscode.window.createWebviewPanel(
+          'chorusContextPeek',
+          'Related Context',
+          { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
+          { enableScripts: true }
+        );
+
+        panel.webview.html = getContextPeekHtml(items);
+
+        // handle messages from webview
+        panel.webview.onDidReceiveMessage(async (message) => {
+          if (message.command === 'openFile' && message.path) {
+            const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+            const fullPath = message.path.startsWith('/')
+              ? message.path
+              : `${workspacePath}/${message.path}`;
+            const uri = vscode.Uri.file(fullPath);
+            await vscode.window.showTextDocument(uri);
+          } else if (message.command === 'viewCommit' && message.hash) {
+            // open git log for commit
+            vscode.window.showInformationMessage(`View Commit: ${message.hash}`);
+          }
+        });
+      }
+    );
+
+    // register view context item command
+    console.log('Registering chorus.viewContextItem command...');
+    const viewContextItemCommand = vscode.commands.registerCommand(
+      'chorus.viewContextItem',
+      async (item: ContextEntry) => {
+        if (item.type === 'doc') {
+          // open document
+          const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+          const fullPath = item.path.startsWith('/')
+            ? item.path
+            : `${workspacePath}/${item.path}`;
+          const uri = vscode.Uri.file(fullPath);
+          await vscode.window.showTextDocument(uri);
+        } else if (item.type === 'commit') {
+          // show commit info in panel
+          ChorusPanel.createOrShow(context.extensionUri, db);
+        }
+      }
+    );
+
+    // register view pr ballots command
+    console.log('Registering chorus.viewPRBallots command...');
+    const viewPRBallotsCommand = vscode.commands.registerCommand(
+      'chorus.viewPRBallots',
+      async (prReference: string) => {
+        const ballots = await db.getBallotsByPR(prReference);
+        const phase = await db.getPRPhase(prReference);
+
+        const message =
+          `PR: ${prReference}\n` +
+          `Phase: ${phase || 'not initialized'}\n` +
+          `Ballots: ${ballots.length}\n\n` +
+          ballots
+            .map(
+              (b) =>
+                `${b.decision.toUpperCase()} (confidence: ${b.confidence})\n` +
+                `Rationale: ${b.rationale}`
+            )
+            .join('\n\n');
+
+        await vscode.window.showInformationMessage(message, { modal: true });
+      }
+    );
+
+    // register quick submit ballot command
+    console.log('Registering chorus.quickSubmitBallot command...');
+    const quickSubmitBallotCommand = vscode.commands.registerCommand(
+      'chorus.quickSubmitBallot',
+      async () => {
+        try {
+          // step 1: select PR
+          const prRef = await vscode.window.showInputBox({
+            prompt: 'Enter PR Reference',
+            placeHolder: '#123 or https://github.com/...',
+          });
+
+          if (!prRef) {
+            return;
+          }
+
+          // check if ballot can be submitted
+          const canSubmit = await db.canSubmitBallot(prRef);
+          if (!canSubmit) {
+            vscode.window.showErrorMessage(
+              'Cannot Submit Ballot: PR is Already in Revealed Phase'
+            );
+            return;
+          }
+
+          // initialize blinded review if not already initialized
+          const phase = await db.getPRPhase(prRef);
+          if (phase === null) {
+            await db.startBlindedReview(prRef, 3);
+          }
+
+          // step 2: select decision
+          const decisionChoice = await vscode.window.showQuickPick(
+            ['Approve', 'Neutral', 'Reject'],
+            { placeHolder: 'What is Your Decision?' }
+          );
+
+          if (!decisionChoice) {
+            return;
+          }
+
+          const decision = decisionChoice.toLowerCase() as 'approve' | 'neutral' | 'reject';
+
+          // step 3: confidence slider (1-5)
+          const confidenceChoice = await vscode.window.showQuickPick(
+            [
+              '1 - Low Confidence',
+              '2',
+              '3 - Medium Confidence',
+              '4',
+              '5 - High Confidence',
+            ],
+            { placeHolder: 'How Confident Are You?' }
+          );
+
+          if (!confidenceChoice) {
+            return;
+          }
+
+          const confidence = parseInt(confidenceChoice.charAt(0));
+
+          // step 4: rationale
+          const rationale = await vscode.window.showInputBox({
+            prompt: 'Provide Evidence-Based Rationale',
+            placeHolder: 'Tests pass, performance is good, security reviewed...',
+          });
+
+          if (!rationale) {
+            return;
+          }
+
+          // get git config for author metadata
+          const gitConfig = await getGitConfig();
+          const authorMetadata = JSON.stringify({
+            name: gitConfig.name || 'Unknown',
+            email: gitConfig.email || 'unknown@example.com',
+            timestamp: new Date().toISOString(),
+          });
+
+          // submit to database
+          await db.addBallot({
+            pr_reference: prRef,
+            decision,
+            confidence,
+            rationale,
+            author_metadata: authorMetadata,
+            revealed: false,
+          });
+
+          vscode.window.showInformationMessage('Ballot Submitted Successfully!');
+
+          // refresh tree view
+          treeProvider.refresh();
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to Submit Ballot: ${error instanceof Error ? error.message : 'Unknown Error'}`
+          );
+        }
+      }
+    );
+
+    // register focus context view command
+    console.log('Registering chorus.focusContextView command...');
+    const focusContextViewCommand = vscode.commands.registerCommand(
+      'chorus.focusContextView',
+      async () => {
+        // reveal the tree view by focusing on it
+        await vscode.commands.executeCommand('chorus.contextView.focus');
+      }
+    );
+
     console.log('Adding disposables to context...');
-    context.subscriptions.push(panelCommand, addEvidenceCommand, codeLensDisposable, db);
+    context.subscriptions.push(
+      panelCommand,
+      addEvidenceCommand,
+      reindexCommand,
+      showIndexStatusCommand,
+      codeLensDisposable,
+      treeView,
+      hoverDisposable,
+      contextPeekCommand,
+      viewContextItemCommand,
+      viewPRBallotsCommand,
+      quickSubmitBallotCommand,
+      focusContextViewCommand,
+      statusBarItem,
+      incrementalIndexer,
+      db
+    );
 
     // set context for conditional UI
     console.log('Setting chorus.enabled context...');
     await vscode.commands.executeCommand('setContext', 'chorus.enabled', true);
+
+    // show welcome panel on first activation
+    const hasSeenWelcome = context.globalState.get('chorus.hasSeenWelcome', false);
+    if (!hasSeenWelcome) {
+      WelcomePanel.show(context.extensionUri);
+      await context.globalState.update('chorus.hasSeenWelcome', true);
+    }
 
     console.log('✅ Chorus extension activated successfully');
   } catch (error) {
@@ -195,4 +489,168 @@ function formatBenchmarkData(data: any): string {
     return `**Status**: ✅ Complete\n\n**Benchmark Results**: ${data.benchmarks.length} tests completed`;
   }
   return `**Status**: ✅ Complete\n\n**Performance**: Metrics captured`;
+}
+
+// helper function to get git config
+async function getGitConfig(): Promise<{ name?: string; email?: string }> {
+  try {
+    const { spawn } = await import('child_process');
+
+    const getName = (): Promise<string> =>
+      new Promise((resolve) => {
+        const proc = spawn('git', ['config', 'user.name']);
+        let output = '';
+        proc.stdout.on('data', (data) => (output += data.toString()));
+        proc.on('close', () => resolve(output.trim()));
+      });
+
+    const getEmail = (): Promise<string> =>
+      new Promise((resolve) => {
+        const proc = spawn('git', ['config', 'user.email']);
+        let output = '';
+        proc.stdout.on('data', (data) => (output += data.toString()));
+        proc.on('close', () => resolve(output.trim()));
+      });
+
+    const [name, email] = await Promise.all([getName(), getEmail()]);
+
+    return { name, email };
+  } catch (error) {
+    console.error('Failed to get git config:', error);
+    return {};
+  }
+}
+
+// helper function to generate context peek html
+function getContextPeekHtml(items: ContextEntry[]): string {
+  const itemsHtml = items
+    .slice(0, 10)
+    .map((item) => {
+      if (item.type === 'commit') {
+        const hash = item.metadata['hash']?.substring(0, 7) || 'unknown';
+        const author = item.metadata['author'] || 'Unknown';
+        const date = item.metadata['date']
+          ? new Date(item.metadata['date'] as string).toLocaleDateString()
+          : 'Unknown';
+
+        return `
+        <div class="context-item" data-type="commit">
+          <div class="icon">📝</div>
+          <div class="content">
+            <div class="title">${escapeHtml(item.title)}</div>
+            <div class="meta">${hash} - ${author} - ${date}</div>
+            <button class="action-btn" onclick="viewCommit('${item.metadata['hash'] as string}')">View Commit</button>
+          </div>
+        </div>
+      `;
+      } else if (item.type === 'doc') {
+        const preview = item.content.substring(0, 150).replace(/\n/g, ' ');
+
+        return `
+        <div class="context-item" data-type="doc">
+          <div class="icon">📖</div>
+          <div class="content">
+            <div class="title">${escapeHtml(item.path)}</div>
+            <div class="meta">${escapeHtml(preview)}...</div>
+            <button class="action-btn" onclick="openFile('${escapeHtml(item.path)}')">Open File</button>
+          </div>
+        </div>
+      `;
+      }
+
+      return '';
+    })
+    .join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Related Context</title>
+  <style>
+    body {
+      font-family: var(--vscode-font-family);
+      padding: 20px;
+      color: var(--vscode-foreground);
+      background-color: var(--vscode-editor-background);
+    }
+
+    h3 {
+      margin-top: 0;
+      color: var(--vscode-textLink-foreground);
+    }
+
+    .context-item {
+      display: flex;
+      gap: 15px;
+      padding: 15px;
+      margin-bottom: 15px;
+      background-color: var(--vscode-editor-inactiveSelectionBackground);
+      border-radius: 6px;
+      border-left: 3px solid var(--vscode-textLink-foreground);
+    }
+
+    .context-item .icon {
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+
+    .context-item .content {
+      flex-grow: 1;
+    }
+
+    .context-item .title {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .context-item .meta {
+      font-size: 0.9em;
+      color: var(--vscode-descriptionForeground);
+      margin-bottom: 10px;
+    }
+
+    .action-btn {
+      padding: 5px 12px;
+      background-color: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .action-btn:hover {
+      background-color: var(--vscode-button-hoverBackground);
+    }
+  </style>
+</head>
+<body>
+  <h3>Related Context</h3>
+  ${itemsHtml}
+
+  <script>
+    const vscode = acquireVsCodeApi();
+
+    function openFile(path) {
+      vscode.postMessage({ command: 'openFile', path: path });
+    }
+
+    function viewCommit(hash) {
+      vscode.postMessage({ command: 'viewCommit', hash: hash });
+    }
+  </script>
+</body>
+</html>`;
+}
+
+// helper function to escape html
+function escapeHtml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }

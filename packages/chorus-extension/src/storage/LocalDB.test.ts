@@ -103,9 +103,9 @@ describe('LocalDB', () => {
       expect(results[0].metadata.files).toEqual(['src/auth.ts', 'src/types.ts']);
     });
 
-    it('should limit search results to 50', async () => {
-      // add more than 50 entries
-      for (let i = 0; i < 60; i++) {
+    it('should limit search results to 100', async () => {
+      // add more than 100 entries to test limit
+      for (let i = 0; i < 120; i++) {
         await db.addContextEntry({
           ...mockContextEntry,
           title: 'Entry ' + i,
@@ -114,7 +114,7 @@ describe('LocalDB', () => {
       }
 
       const results = await db.searchContext('Entry');
-      expect(results).toHaveLength(50);
+      expect(results).toHaveLength(100);
     });
   });
 
