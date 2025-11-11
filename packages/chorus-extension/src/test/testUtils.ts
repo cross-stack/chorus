@@ -1,4 +1,4 @@
-import { LocalDB, ContextEntry, BallotEntry } from '../storage/LocalDB';
+import { LocalDB, ContextEntry, BallotEntry, EvidenceEntry } from '../storage/LocalDB';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { tmpdir } from 'os';
@@ -64,6 +64,10 @@ export const mockBallot: Omit<BallotEntry, 'id' | 'created_at'> = {
 };
 
 export function createMockVSCodeExtensionContext(): any {
+  // mock globalState storage for extension context
+  const stateMap = new Map<string, any>();
+  const secretsMap = new Map<string, string>();
+
   return {
     globalStorageUri: {
       fsPath: path.join(tmpdir(), 'chorus-test-context'),
@@ -71,6 +75,26 @@ export function createMockVSCodeExtensionContext(): any {
     subscriptions: [],
     extensionUri: {
       fsPath: '/mock/extension/path',
+    },
+    globalState: {
+      get: (key: string, defaultValue?: any) => {
+        return stateMap.has(key) ? stateMap.get(key) : defaultValue;
+      },
+      update: async (key: string, value: any) => {
+        stateMap.set(key, value);
+      },
+      keys: () => Array.from(stateMap.keys()),
+    },
+    secrets: {
+      get: async (key: string): Promise<string | undefined> => {
+        return secretsMap.get(key);
+      },
+      store: async (key: string, value: string): Promise<void> => {
+        secretsMap.set(key, value);
+      },
+      delete: async (key: string): Promise<void> => {
+        secretsMap.delete(key);
+      },
     },
   };
 }
@@ -179,4 +203,20 @@ export const TEST_GIT_USER = {
 export const TEST_GIT_USER_ALT = {
   name: 'Jane Reviewer',
   email: 'jane.reviewer@example.com',
+};
+
+/**
+ * Test fixture for evidence entry
+ */
+export const mockEvidence: Omit<EvidenceEntry, 'id' | 'timestamp'> = {
+  pr_reference: '#123',
+  tests_status: 'complete',
+  tests_details: 'All tests passing with 95% coverage',
+  benchmarks_status: 'n/a',
+  benchmarks_details: '',
+  spec_status: 'n/a',
+  spec_references: '',
+  risk_level: 'low',
+  identified_risks: '',
+  rollback_plan: '',
 };

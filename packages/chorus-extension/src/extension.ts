@@ -1,12 +1,15 @@
 import * as vscode from 'vscode';
 import { ChorusPanel } from './panel/ChorusPanel';
-import { LocalDB, ContextEntry } from './storage/LocalDB';
+import { LocalDB, ContextEntry, EvidenceEntry } from './storage/LocalDB';
 import { IncrementalIndexer } from './services/IncrementalIndexer';
 import { RelatedContextProvider } from './codelens/RelatedContextProvider';
 import { ContextTreeProvider } from './views/ContextTreeProvider';
 import { ContextHoverProvider } from './providers/ContextHoverProvider';
 import { WelcomePanel } from './walkthrough/WelcomePanel';
 import { Indexer } from './services/Indexer';
+import { validateEvidence } from './utils/evidenceValidation';
+import { EvidenceStatus } from './types/evidence';
+import { GitHubService } from './services/GitHubService';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   console.log('Activating Chorus extension...');
@@ -19,12 +22,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await db.initialize();
     console.log('Database initialized successfully');
 
+    // initialize github service
+    console.log('Creating GitHubService instance...');
+    const githubService = new GitHubService(context);
+    await githubService.loadToken();
+    console.log('GitHubService initialized successfully');
+
     // create status bar item for indexing progress
     console.log('Creating status bar item...');
-    const statusBarItem = vscode.window.createStatusBarItem(
-      vscode.StatusBarAlignment.Right,
-      100
-    );
+    const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     statusBarItem.command = 'chorus.showIndexStatus';
     statusBarItem.text = '$(sync~spin) Chorus: Indexing...';
     statusBarItem.tooltip = 'Indexing workspace for context discovery';
@@ -42,7 +48,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     console.log('Starting background workspace indexing...');
     incrementalIndexer.indexIncrementally().catch((err) => {
       console.error('Failed to index workspace:', err);
-      vscode.window.showWarningMessage('Chorus: Failed to Index Workspace - Click Status Bar to Retry');
+      vscode.window.showWarningMessage(
+        'Chorus: Failed to Index Workspace - Click Status Bar to Retry'
+      );
     });
 
     // register panel command
@@ -50,7 +58,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const panelCommand = vscode.commands.registerCommand('chorus.showPanel', () => {
       console.log('chorus.showPanel command triggered');
       try {
-        ChorusPanel.createOrShow(context.extensionUri, db);
+        ChorusPanel.createOrShow(context.extensionUri, db, githubService);
       } catch (error) {
         console.error('Failed to show Chorus panel:', error);
         vscode.window.showErrorMessage(
@@ -64,11 +72,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const addEvidenceCommand = vscode.commands.registerCommand('chorus.addEvidence', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        vscode.window.showInformationMessage('No active editor');
+        vscode.window.showInformationMessage('No Active Editor');
         return;
       }
 
       try {
+        // prompt for PR reference
+        const prRef = await vscode.window.showInputBox({
+          prompt: 'Enter PR Reference (e.g., #123 or full URL)',
+          placeHolder: '#123',
+          validateInput: (value) => {
+            return value.trim() === '' ? 'PR Reference is Required' : undefined;
+          },
+        });
+
+        if (!prRef) {
+          return;
+        }
+
         // get clipboard content
         const clipboardText = await vscode.env.clipboard.readText();
 
@@ -82,16 +103,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         const evidenceBlock = formatEvidenceBlock(evidenceData, clipboardText);
 
+        // parse evidence data for database persistence
+        const evidence = parseEvidenceData(prRef, evidenceData, clipboardText);
+
+        // validate evidence
+        const validation = validateEvidence(evidence);
+
+        // save to database
+        await db.saveEvidence(evidence);
+
         // insert evidence block
         await editor.edit((editBuilder) => {
           const position = editor.selection.active;
           editBuilder.insert(position, evidenceBlock);
         });
 
-        vscode.window.showInformationMessage('Chorus Evidence block added successfully');
+        // show success with validation warnings if any
+        if (validation.warnings.length > 0) {
+          const warningMsg = `Evidence Added\n\nWarnings:\n${validation.warnings.map((w) => `- ${w}`).join('\n')}`;
+          vscode.window.showWarningMessage(warningMsg);
+        } else {
+          vscode.window.showInformationMessage('Chorus Evidence Block Added Successfully');
+        }
       } catch (error) {
         vscode.window.showErrorMessage(
-          `Failed to add evidence: ${error instanceof Error ? error.message : 'Unknown error'}`
+          `Failed to Add Evidence: ${error instanceof Error ? error.message : 'Unknown Error'}`
         );
       }
     });
@@ -128,11 +164,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 - Click "Reindex" below to force a complete reindex
 - File changes are automatically detected and indexed`;
 
-          const action = await vscode.window.showInformationMessage(
-            message,
-            'Reindex',
-            'Close'
-          );
+          const action = await vscode.window.showInformationMessage(message, 'Reindex', 'Close');
 
           if (action === 'Reindex') {
             await vscode.commands.executeCommand('chorus.reindexWorkspace');
@@ -155,7 +187,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // register tree view provider
     console.log('Registering context tree view...');
     const indexer = new Indexer(db);
-    const treeProvider = new ContextTreeProvider(db, indexer);
+    const treeProvider = new ContextTreeProvider(db, indexer, githubService);
     const treeView = vscode.window.createTreeView('chorus.contextView', {
       treeDataProvider: treeProvider,
       showCollapseAll: true,
@@ -209,14 +241,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (item.type === 'doc') {
           // open document
           const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-          const fullPath = item.path.startsWith('/')
-            ? item.path
-            : `${workspacePath}/${item.path}`;
+          const fullPath = item.path.startsWith('/') ? item.path : `${workspacePath}/${item.path}`;
           const uri = vscode.Uri.file(fullPath);
           await vscode.window.showTextDocument(uri);
         } else if (item.type === 'commit') {
           // show commit info in panel
-          ChorusPanel.createOrShow(context.extensionUri, db);
+          ChorusPanel.createOrShow(context.extensionUri, db, githubService);
         }
       }
     );
@@ -264,9 +294,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           // check if ballot can be submitted
           const canSubmit = await db.canSubmitBallot(prRef);
           if (!canSubmit) {
-            vscode.window.showErrorMessage(
-              'Cannot Submit Ballot: PR is Already in Revealed Phase'
-            );
+            vscode.window.showErrorMessage('Cannot Submit Ballot: PR is Already in Revealed Phase');
             return;
           }
 
@@ -290,13 +318,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
           // step 3: confidence slider (1-5)
           const confidenceChoice = await vscode.window.showQuickPick(
-            [
-              '1 - Low Confidence',
-              '2',
-              '3 - Medium Confidence',
-              '4',
-              '5 - High Confidence',
-            ],
+            ['1 - Low Confidence', '2', '3 - Medium Confidence', '4', '5 - High Confidence'],
             { placeHolder: 'How Confident Are You?' }
           );
 
@@ -356,6 +378,90 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     );
 
+    // register configure github token command
+    console.log('Registering chorus.configureGitHubToken command...');
+    const configureGitHubTokenCommand = vscode.commands.registerCommand(
+      'chorus.configureGitHubToken',
+      async () => {
+        try {
+          const action = await vscode.window.showInformationMessage(
+            'Configure GitHub Token for Chorus\n\n' +
+              'A GitHub personal access token enables:\n' +
+              '- Higher API rate limits (5000 vs 60 requests/hour)\n' +
+              '- Access to private repositories\n' +
+              '- Indexing PR descriptions and issue comments\n\n' +
+              'Required scopes: public_repo (or repo for private repos)\n\n' +
+              'Token is stored securely in VS Code secret storage.',
+            { modal: true },
+            'Set Token',
+            'Remove Token',
+            'Create Token',
+            'Cancel'
+          );
+
+          if (action === 'Create Token') {
+            await vscode.env.openExternal(
+              vscode.Uri.parse(
+                'https://github.com/settings/tokens/new?scopes=public_repo&description=Chorus%20Extension'
+              )
+            );
+            return;
+          }
+
+          if (action === 'Remove Token') {
+            await githubService.setToken(undefined);
+            vscode.window.showInformationMessage('GitHub Token Removed Successfully');
+            return;
+          }
+
+          if (action === 'Set Token') {
+            const token = await vscode.window.showInputBox({
+              prompt: 'Enter GitHub Personal Access Token',
+              placeHolder: 'ghp_...',
+              password: true,
+              validateInput: (value) => {
+                if (!value || value.trim() === '') {
+                  return 'Token Cannot Be Empty';
+                }
+                if (!value.startsWith('ghp_') && !value.startsWith('github_pat_')) {
+                  return 'Token Should Start with ghp_ or github_pat_';
+                }
+                return undefined;
+              },
+            });
+
+            if (token) {
+              await githubService.setToken(token);
+              vscode.window.showInformationMessage('GitHub Token Configured Successfully');
+
+              // offer to reindex workspace to fetch github data
+              const reindex = await vscode.window.showInformationMessage(
+                'Reindex Workspace to Fetch GitHub Data?',
+                'Reindex',
+                'Later'
+              );
+
+              if (reindex === 'Reindex') {
+                await vscode.commands.executeCommand('chorus.reindexWorkspace');
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Failed to configure GitHub token:', error);
+          vscode.window.showErrorMessage(
+            `Failed to Configure GitHub Token: ${error instanceof Error ? error.message : 'Unknown Error'}`
+          );
+        }
+      }
+    );
+
+    // register show welcome command
+    console.log('Registering chorus.showWelcome command...');
+    const showWelcomeCommand = vscode.commands.registerCommand('chorus.showWelcome', () => {
+      console.log('chorus.showWelcome command triggered');
+      WelcomePanel.show(context.extensionUri);
+    });
+
     console.log('Adding disposables to context...');
     context.subscriptions.push(
       panelCommand,
@@ -370,6 +476,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       viewPRBallotsCommand,
       quickSubmitBallotCommand,
       focusContextViewCommand,
+      configureGitHubTokenCommand,
+      showWelcomeCommand,
       statusBarItem,
       incrementalIndexer,
       db
@@ -398,6 +506,67 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 export function deactivate(): void {
   console.log('Deactivating Chorus extension...');
+}
+
+/**
+ * Parses evidence data from clipboard content and structures it for database persistence.
+ *
+ * Automatically detects test results, coverage data, and benchmarks from JSON or raw text.
+ * Sets reasonable defaults for missing fields to enable quick evidence capture.
+ *
+ * @param prRef - The PR reference
+ * @param evidenceData - Parsed JSON data (if available)
+ * @param rawText - Raw clipboard text
+ * @returns Structured evidence entry ready for validation and persistence
+ */
+function parseEvidenceData(
+  prRef: string,
+  evidenceData: any,
+  rawText: string
+): Omit<EvidenceEntry, 'id' | 'timestamp'> {
+  let testsStatus: EvidenceStatus = 'n/a';
+  let testsDetails = '';
+  let benchmarksStatus: EvidenceStatus = 'n/a';
+  let benchmarksDetails = '';
+
+  // detect test results from JSON data
+  if (evidenceData) {
+    if (
+      evidenceData.testResults ||
+      evidenceData.tests ||
+      evidenceData.numPassedTests !== undefined
+    ) {
+      testsStatus = 'complete';
+      testsDetails = JSON.stringify(evidenceData, null, 2);
+    }
+
+    if (evidenceData.benchmarks || evidenceData.performance) {
+      benchmarksStatus = 'complete';
+      benchmarksDetails = JSON.stringify(evidenceData, null, 2);
+    }
+  }
+
+  // fallback to raw text if no structured data
+  if (testsStatus === 'n/a' && rawText.trim()) {
+    // check if raw text looks like test output
+    if (rawText.match(/test|pass|fail|coverage/i)) {
+      testsStatus = 'complete';
+      testsDetails = rawText.trim();
+    }
+  }
+
+  return {
+    pr_reference: prRef,
+    tests_status: testsStatus,
+    tests_details: testsDetails,
+    benchmarks_status: benchmarksStatus,
+    benchmarks_details: benchmarksDetails,
+    spec_status: 'n/a',
+    spec_references: '',
+    risk_level: 'low',
+    identified_risks: '',
+    rollback_plan: '',
+  };
 }
 
 function formatEvidenceBlock(evidenceData: any, rawText: string): string {

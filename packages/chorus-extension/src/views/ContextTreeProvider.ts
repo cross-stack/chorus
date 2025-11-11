@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { LocalDB, ContextEntry } from '../storage/LocalDB';
 import { Indexer } from '../services/Indexer';
+import { GitHubService } from '../services/GitHubService';
+import { GitHubPR, GitHubReview } from '../types/github';
 
 export class ContextItem extends vscode.TreeItem {
   public override readonly contextValue: string;
@@ -24,8 +26,14 @@ export class ContextItem extends vscode.TreeItem {
       this.iconPath = new vscode.ThemeIcon('book');
     } else if (contextValue === 'pr') {
       this.iconPath = new vscode.ThemeIcon('git-pull-request');
+    } else if (contextValue === 'pr-merged') {
+      this.iconPath = new vscode.ThemeIcon('git-merge');
+    } else if (contextValue === 'pr-closed') {
+      this.iconPath = new vscode.ThemeIcon('circle-slash');
     } else if (contextValue === 'section') {
       this.iconPath = new vscode.ThemeIcon('folder');
+    } else if (contextValue === 'search') {
+      this.iconPath = new vscode.ThemeIcon('search');
     }
   }
 }
@@ -37,9 +45,9 @@ export class ContextTreeProvider implements vscode.TreeDataProvider<ContextItem>
   private currentFilePath: string | undefined;
 
   constructor(
-    // db reserved for future use (active reviews, ballot tracking)
-    _db: LocalDB,
-    private indexer: Indexer
+    private db: LocalDB,
+    private indexer: Indexer,
+    private githubService?: GitHubService
   ) {
     // listen to active editor changes to update context
     vscode.window.onDidChangeActiveTextEditor((editor) => {
@@ -67,16 +75,8 @@ export class ContextTreeProvider implements vscode.TreeDataProvider<ContextItem>
           vscode.TreeItemCollapsibleState.Expanded,
           'section'
         ),
-        new ContextItem(
-          'Active Reviews',
-          vscode.TreeItemCollapsibleState.Expanded,
-          'section'
-        ),
-        new ContextItem(
-          'Recent Searches',
-          vscode.TreeItemCollapsibleState.Collapsed,
-          'section'
-        ),
+        new ContextItem('Active Reviews', vscode.TreeItemCollapsibleState.Expanded, 'section'),
+        new ContextItem('Recent Searches', vscode.TreeItemCollapsibleState.Collapsed, 'section'),
       ];
       return sections;
     }
@@ -149,15 +149,21 @@ export class ContextTreeProvider implements vscode.TreeDataProvider<ContextItem>
         items.push(docsCategory);
       }
 
-      // TODO: fetch github pr data for active reviews tree section
-      // TODO: link ballot submissions to github pr comments
-      const prsCategory = new ContextItem(
-        'Related PRs (0)',
-        vscode.TreeItemCollapsibleState.Collapsed,
-        'contextCategory',
-        { type: 'pr', items: [] }
-      );
-      items.push(prsCategory);
+      // fetch pr data from context database and enrich with github api
+      const prs = context.filter((c) => c.type === 'pr');
+
+      if (prs.length > 0) {
+        // enrich pr data with live status from github (if available)
+        const enrichedPRs = await this.enrichPRsWithGitHubData(prs);
+
+        const prsCategory = new ContextItem(
+          `Related PRs (${prs.length})`,
+          vscode.TreeItemCollapsibleState.Expanded,
+          'contextCategory',
+          { type: 'pr', items: enrichedPRs }
+        );
+        items.push(prsCategory);
+      }
 
       return items;
     } catch (error) {
@@ -181,12 +187,33 @@ export class ContextTreeProvider implements vscode.TreeDataProvider<ContextItem>
 
     for (const entry of contextEntries.slice(0, 10)) {
       // limit to 10 items
+      // determine context value based on entry type and metadata
+      let contextValue = entry.type;
+      if (entry.type === 'pr' && entry.metadata['githubData']) {
+        const prData = entry.metadata['githubData'] as GitHubPR;
+        if (prData.merged_at) {
+          contextValue = 'pr-merged' as any;
+        } else if (prData.state === 'closed') {
+          contextValue = 'pr-closed' as any;
+        } else {
+          contextValue = 'pr';
+        }
+      }
+
       const item = new ContextItem(
         this.formatContextItemLabel(entry),
         vscode.TreeItemCollapsibleState.None,
-        entry.type,
+        contextValue,
         entry
       );
+
+      // add description for PRs with review status
+      if (entry.type === 'pr' && entry.metadata['githubData'] && entry.metadata['reviews']) {
+        item.description = this.formatPRStatus(
+          entry.metadata['githubData'] as GitHubPR,
+          entry.metadata['reviews'] as GitHubReview[]
+        );
+      }
 
       // add tooltip
       item.tooltip = this.formatTooltip(entry);
@@ -225,42 +252,202 @@ export class ContextTreeProvider implements vscode.TreeDataProvider<ContextItem>
       return `${entry.title}\n\nAuthor: ${author}\nDate: ${date}`;
     } else if (entry.type === 'doc') {
       return `${entry.path}\n\n${entry.content.substring(0, 200)}...`;
+    } else if (entry.type === 'pr' && entry.metadata['githubData']) {
+      const prData = entry.metadata['githubData'] as GitHubPR;
+      const status =
+        prData.merged_at ? 'Merged' : prData.state === 'closed' ? 'Closed' : 'Open';
+      return `${entry.title}\n\nStatus: ${status}\nAuthor: ${prData.user.login}\nUpdated: ${new Date(prData.updated_at).toLocaleDateString()}`;
     }
     return entry.title;
   }
 
-  private async getActiveReviewsItems(): Promise<ContextItem[]> {
-    // TODO: show pr review status in tree view (approved/rejected/pending)
-    // privacy note: github api calls are read-only and opt-in
+  /**
+   * Formats PR status for tree item description.
+   * Shows review status and comment count.
+   *
+   * @param prData - GitHub PR data
+   * @param reviews - Array of PR reviews (optional)
+   * @returns Formatted status string (e.g., "#123 • ✅ Approved • 3 comments")
+   */
+  private formatPRStatus(prData: GitHubPR, reviews?: GitHubReview[]): string {
+    const parts: string[] = [`#${prData.number}`];
 
-    // for now, show placeholder - ballots are not stored as context entries
-    // they are in a separate table, so we can't easily list them here without
-    // adding a dedicated method to LocalDB
-    const items: ContextItem[] = [];
+    // add review status if reviews are available
+    if (reviews && reviews.length > 0) {
+      const hasApproval = reviews.some((r) => r.state === 'APPROVED');
+      const hasChangesRequested = reviews.some((r) => r.state === 'CHANGES_REQUESTED');
 
-    items.push(
-      new ContextItem(
-        'No active reviews',
-        vscode.TreeItemCollapsibleState.None,
-        'empty'
-      )
-    );
+      if (hasApproval && !hasChangesRequested) {
+        parts.push('✅ Approved');
+      } else if (hasChangesRequested) {
+        parts.push('⏳ Changes Requested');
+      } else {
+        parts.push('👀 Pending Review');
+      }
+    } else {
+      parts.push('👀 Pending Review');
+    }
 
-    return items;
+    return parts.join(' • ');
   }
 
-  private getRecentSearchesItems(): ContextItem[] {
-    // TODO: implement search history tracking
-    const items: ContextItem[] = [];
+  private async getActiveReviewsItems(): Promise<ContextItem[]> {
+    try {
+      // fetch all PRs from context database
+      const allPRs = await this.db.searchContext('', 'pr');
 
-    items.push(
-      new ContextItem(
-        'Search history not yet implemented',
-        vscode.TreeItemCollapsibleState.None,
-        'empty'
-      )
-    );
+      if (allPRs.length === 0) {
+        return [
+          new ContextItem('No active reviews', vscode.TreeItemCollapsibleState.None, 'empty'),
+        ];
+      }
 
-    return items;
+      // enrich pr data with live status from github
+      const enrichedPRs = await this.enrichPRsWithGitHubData(allPRs);
+
+      // create tree items for each PR
+      const items: ContextItem[] = [];
+      for (const prEntry of enrichedPRs.slice(0, 10)) {
+        // limit to 10
+        // determine context value based on PR state
+        let contextValue = 'pr';
+        if (prEntry.metadata['githubData']) {
+          const prData = prEntry.metadata['githubData'] as GitHubPR;
+          if (prData.merged_at) {
+            contextValue = 'pr-merged' as any;
+          } else if (prData.state === 'closed') {
+            contextValue = 'pr-closed' as any;
+          }
+        }
+
+        const item = new ContextItem(
+          this.formatContextItemLabel(prEntry),
+          vscode.TreeItemCollapsibleState.None,
+          contextValue,
+          prEntry
+        );
+
+        // add description with review status
+        if (prEntry.metadata['githubData'] && prEntry.metadata['reviews']) {
+          item.description = this.formatPRStatus(
+            prEntry.metadata['githubData'] as GitHubPR,
+            prEntry.metadata['reviews'] as GitHubReview[]
+          );
+        }
+
+        // add tooltip
+        item.tooltip = this.formatTooltip(prEntry);
+
+        // add command to view PR
+        item.command = {
+          command: 'chorus.viewContextItem',
+          title: 'View PR',
+          arguments: [prEntry],
+        };
+
+        items.push(item);
+      }
+
+      return items;
+    } catch (error) {
+      console.error('Error getting active reviews:', error);
+      return [
+        new ContextItem('Error loading reviews', vscode.TreeItemCollapsibleState.None, 'error'),
+      ];
+    }
+  }
+
+  private async getRecentSearchesItems(): Promise<ContextItem[]> {
+    try {
+      // fetch recent searches from database
+      const searches = await this.db.getRecentSearches(10);
+
+      if (searches.length === 0) {
+        return [
+          new ContextItem('No recent searches', vscode.TreeItemCollapsibleState.None, 'empty'),
+        ];
+      }
+
+      // create tree items for each search
+      const items: ContextItem[] = [];
+      for (const search of searches) {
+        const item = new ContextItem(
+          search.query,
+          vscode.TreeItemCollapsibleState.None,
+          'search',
+          search
+        );
+
+        // add tooltip with timestamp
+        const date = new Date(search.timestamp);
+        item.tooltip = `Search: ${search.query}\nDate: ${date.toLocaleString()}`;
+
+        // add command to re-execute search
+        item.command = {
+          command: 'chorus.executeSearch',
+          title: 'Execute Search',
+          arguments: [search.query],
+        };
+
+        items.push(item);
+      }
+
+      return items;
+    } catch (error) {
+      console.error('Error getting recent searches:', error);
+      return [
+        new ContextItem('Error loading searches', vscode.TreeItemCollapsibleState.None, 'error'),
+      ];
+    }
+  }
+
+  /**
+   * Enriches PR context entries with live GitHub data (PR details and reviews).
+   * Uses caching to minimize API calls.
+   *
+   * @param prEntries - Array of PR context entries from database
+   * @returns Array of enriched PR entries with githubData and reviews in metadata
+   */
+  private async enrichPRsWithGitHubData(prEntries: ContextEntry[]): Promise<ContextEntry[]> {
+    if (!this.githubService) {
+      // no github service available, return as-is
+      return prEntries;
+    }
+
+    const enriched: ContextEntry[] = [];
+
+    for (const entry of prEntries) {
+      try {
+        // parse PR reference from path (format: owner/repo#number)
+        const prRef = this.githubService.parsePRReference(entry.path);
+        if (!prRef) {
+          // invalid format, keep original entry
+          enriched.push(entry);
+          continue;
+        }
+
+        // fetch PR data and reviews from github (with caching)
+        const [prData, reviews] = await Promise.all([
+          this.githubService.getPullRequest(prRef.owner, prRef.repo, prRef.number),
+          this.githubService.getPRReviews(prRef.owner, prRef.repo, prRef.number),
+        ]);
+
+        // create enriched entry with github data
+        enriched.push({
+          ...entry,
+          metadata: {
+            ...entry.metadata,
+            githubData: prData,
+            reviews: reviews,
+          },
+        });
+      } catch (error) {
+        console.error(`Error enriching PR ${entry.path}:`, error);
+        // keep original entry on error
+        enriched.push(entry);
+      }
+    }
+
+    return enriched;
   }
 }

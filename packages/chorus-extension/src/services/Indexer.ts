@@ -3,9 +3,14 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { LocalDB, ContextEntry } from '../storage/LocalDB';
 import { simpleGitLog } from './GitService';
+import { GitHubService } from './GitHubService';
+import { GitHubPR } from '../types/github';
 
 export class Indexer {
-  constructor(private db: LocalDB) {}
+  constructor(
+    private db: LocalDB,
+    private githubService?: GitHubService
+  ) {}
 
   async indexWorkspace(): Promise<void> {
     const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -25,8 +30,8 @@ export class Indexer {
       // index documentation
       await this.indexDocuments(folderPath);
 
-      // TODO: fetch github pr descriptions and index them for search
-      // TODO: include github issue comments in relevance scoring
+      // index github prs and issues
+      await this.indexGitHubData(folderPath);
     }
 
     console.log('Workspace indexing completed');
@@ -57,6 +62,191 @@ export class Indexer {
       console.log('Indexed ' + commits.length + ' git commits');
     } catch (error) {
       console.error('Failed to index git commits:', error);
+    }
+  }
+
+  /**
+   * Indexes GitHub PR and issue data for context search.
+   *
+   * Fetches recent PRs (last 20 open + 10 recently closed) and indexes:
+   * - PR descriptions
+   * - PR comments
+   * - PR reviews
+   *
+   * Gracefully handles GitHub unavailability or rate limiting.
+   * Includes progress indication via status bar.
+   *
+   * @param workspacePath - The workspace folder path
+   */
+  private async indexGitHubData(workspacePath: string): Promise<void> {
+    // skip if github service not available
+    if (!this.githubService) {
+      console.log('Indexer: GitHubService not available, skipping PR indexing');
+      return;
+    }
+
+    try {
+      // detect github repo
+      const repo = await this.githubService.detectGitHubRepo(workspacePath);
+      if (!repo) {
+        console.log('Indexer: Not a GitHub repository, skipping PR indexing');
+        return;
+      }
+
+      console.log(`Indexer: Detected GitHub repo: ${repo.owner}/${repo.repo}`);
+
+      // show status bar progress
+      vscode.window.setStatusBarMessage('$(sync~spin) Indexing GitHub PRs...', 5000);
+
+      // fetch recent PRs (last 20 open + 10 recently closed)
+      const openPRs = await this.fetchPRs(repo.owner, repo.repo, 'open', 20);
+      const closedPRs = await this.fetchPRs(repo.owner, repo.repo, 'closed', 10);
+
+      const allPRs = [...openPRs, ...closedPRs];
+
+      if (allPRs.length === 0) {
+        console.log('Indexer: No PRs found to index');
+        return;
+      }
+
+      // index each PR with its comments and reviews
+      let indexedCount = 0;
+      for (const pr of allPRs) {
+        await this.indexPR(repo.owner, repo.repo, pr);
+        indexedCount++;
+
+        // update progress periodically
+        if (indexedCount % 5 === 0) {
+          vscode.window.setStatusBarMessage(
+            `$(sync~spin) Indexing GitHub PRs... (${indexedCount}/${allPRs.length})`,
+            3000
+          );
+        }
+      }
+
+      console.log(`Indexed ${indexedCount} GitHub PRs`);
+      vscode.window.setStatusBarMessage(`$(check) Indexed ${indexedCount} GitHub PRs`, 3000);
+    } catch (error: any) {
+      console.error('Indexer: Failed to index GitHub data:', error);
+
+      // show user-friendly warning for rate limiting
+      if (error?.status === 403 || error?.message?.includes('rate limit')) {
+        vscode.window.showWarningMessage(
+          'GitHub Rate Limit Reached. Token Recommended.',
+          'Configure Token'
+        ).then((selection) => {
+          if (selection === 'Configure Token') {
+            vscode.commands.executeCommand('chorus.configureGitHubToken');
+          }
+        });
+      }
+
+      // graceful degradation: continue without GitHub data
+    }
+  }
+
+  /**
+   * Fetches PRs from GitHub API with pagination support.
+   *
+   * @param owner - Repository owner
+   * @param repo - Repository name
+   * @param state - PR state ('open' or 'closed')
+   * @param limit - Maximum number of PRs to fetch
+   * @returns Array of GitHub PRs
+   */
+  private async fetchPRs(
+    owner: string,
+    repo: string,
+    state: 'open' | 'closed',
+    limit: number
+  ): Promise<GitHubPR[]> {
+    if (!this.githubService) {
+      return [];
+    }
+
+    try {
+      const prs = await this.githubService.listPullRequests(owner, repo, state, limit);
+      console.log(`Indexer: Fetched ${prs.length} ${state} PRs`);
+      return prs;
+    } catch (error) {
+      console.error(`Indexer: Failed to fetch ${state} PRs:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Indexes a single PR with all its comments and reviews.
+   *
+   * Creates a context entry with:
+   * - Type: 'pr'
+   * - Title: '#${number}: ${title}'
+   * - Path: PR URL
+   * - Content: PR body + comments + reviews (concatenated)
+   * - Metadata: PR state, labels, author, dates, counts
+   *
+   * @param owner - Repository owner
+   * @param repo - Repository name
+   * @param pr - PR data
+   */
+  private async indexPR(owner: string, repo: string, pr: GitHubPR): Promise<void> {
+    if (!this.githubService) {
+      return;
+    }
+
+    try {
+      // fetch comments and reviews
+      const comments = await this.githubService.getPRComments(owner, repo, pr.number);
+      const reviews = await this.githubService.getPRReviews(owner, repo, pr.number);
+
+      // concatenate all content for better search
+      let content = pr.body ?? '';
+
+      // add comments section
+      if (comments.length > 0) {
+        content += '\n\nComments:\n';
+        for (const comment of comments) {
+          content += `\n[${comment.user.login}] ${comment.body}\n`;
+        }
+      }
+
+      // add reviews section
+      if (reviews.length > 0) {
+        content += '\n\nReviews:\n';
+        for (const review of reviews) {
+          if (review.body) {
+            content += `\n[${review.user.login} - ${review.state}] ${review.body}\n`;
+          }
+        }
+      }
+
+      // determine pr state (open/closed/merged)
+      const state = pr.merged_at ? 'merged' : pr.state;
+
+      // create context entry
+      const contextEntry: Omit<ContextEntry, 'id' | 'indexed_at'> = {
+        type: 'pr',
+        title: `#${pr.number}: ${pr.title}`,
+        path: pr.html_url,
+        content: content,
+        metadata: {
+          prNumber: pr.number,
+          state: state,
+          author: pr.user.login,
+          labels: pr.labels.map((l) => l.name),
+          created_at: pr.created_at,
+          updated_at: pr.updated_at,
+          comments_count: comments.length,
+          reviews_count: reviews.length,
+          draft: pr.draft,
+          head_ref: pr.head.ref,
+          base_ref: pr.base.ref,
+        },
+      };
+
+      await this.db.addContextEntry(contextEntry);
+    } catch (error) {
+      console.error(`Indexer: Failed to index PR ${owner}/${repo}#${pr.number}:`, error);
+      // continue with other PRs
     }
   }
 
@@ -250,7 +440,6 @@ export class Indexer {
     const totalDocs = documents.length;
 
     // count documents containing term
-    // TODO: cache github api responses to minimize rate limit usage
     let docsWithTerm = 0;
     for (const doc of documents) {
       const content = (doc.title + ' ' + doc.content).toLowerCase();

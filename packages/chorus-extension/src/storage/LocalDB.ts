@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as vscode from 'vscode';
 import initSqlJs, { Database, SqlJsStatic } from 'sql.js';
+import { EvidenceEntry } from '../types/evidence';
 
 export interface ContextEntry {
   id?: number;
@@ -32,9 +33,19 @@ export interface PRState {
   phase: 'blinded' | 'revealed';
   ballot_threshold: number;
   first_pass_deadline?: string;
+  github_comment_url?: string;
+  github_posted_at?: string;
   created_at: string;
   updated_at: string;
 }
+
+export interface SearchHistoryEntry {
+  id?: number;
+  query: string;
+  timestamp: string;
+}
+
+export { EvidenceEntry };
 
 export class LocalDB implements vscode.Disposable {
   private db: Database | null = null;
@@ -146,12 +157,16 @@ export class LocalDB implements vscode.Disposable {
     // phase 'revealed': ballots are revealed, discussion phase begins
     // this separation supports double-blind review and reduces anchoring bias
     // ballot_threshold: minimum number of ballots required before reveal is allowed
+    // github_comment_url: url of posted ballot summary comment on github pr
+    // github_posted_at: timestamp when ballot summary was posted to github
     this.db.run(`
 			CREATE TABLE IF NOT EXISTS pr_state (
 				pr_reference TEXT PRIMARY KEY,
 				phase TEXT NOT NULL CHECK (phase IN ('blinded', 'revealed')),
 				ballot_threshold INTEGER NOT NULL DEFAULT 3,
 				first_pass_deadline DATETIME,
+				github_comment_url TEXT,
+				github_posted_at DATETIME,
 				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 				updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 			)
@@ -167,11 +182,44 @@ export class LocalDB implements vscode.Disposable {
 			)
 		`);
 
+    // evidence_entries table - tracks evidence blocks for PRs
+    // stores structured evidence data for tests, benchmarks, specs, and risk assessments
+    // supports validation and tracking of evidence completeness across PR lifecycle
+    this.db.run(`
+			CREATE TABLE IF NOT EXISTS evidence_entries (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				pr_reference TEXT NOT NULL,
+				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				tests_status TEXT NOT NULL CHECK (tests_status IN ('complete', 'in_progress', 'n/a')),
+				tests_details TEXT NOT NULL DEFAULT '',
+				benchmarks_status TEXT NOT NULL CHECK (benchmarks_status IN ('complete', 'in_progress', 'n/a')),
+				benchmarks_details TEXT NOT NULL DEFAULT '',
+				spec_status TEXT NOT NULL CHECK (spec_status IN ('complete', 'in_progress', 'n/a')),
+				spec_references TEXT NOT NULL DEFAULT '',
+				risk_level TEXT NOT NULL CHECK (risk_level IN ('low', 'medium', 'high')),
+				identified_risks TEXT NOT NULL DEFAULT '',
+				rollback_plan TEXT NOT NULL DEFAULT ''
+			)
+		`);
+
+    // search_history table - tracks user search queries for context discovery
+    // stores search history to enable quick re-execution of previous searches
+    // supports search patterns analysis and helps users navigate their workflow
+    this.db.run(`
+			CREATE TABLE IF NOT EXISTS search_history (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				query TEXT NOT NULL,
+				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			)
+		`);
+
     // create indexes for better search performance
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_context_type ON context_entries(type)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_context_path ON context_entries(path)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_ballots_pr ON ballots(pr_reference)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_pr_state_phase ON pr_state(phase)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_evidence_pr ON evidence_entries(pr_reference)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_search_history_ts ON search_history(timestamp DESC)`);
   }
 
   async addContextEntry(entry: Omit<ContextEntry, 'id' | 'indexed_at'>): Promise<number> {
@@ -213,7 +261,6 @@ export class LocalDB implements vscode.Disposable {
 
     // remove order by clause - ranking happens in indexer using bm25
     // increase limit since ranking happens after retrieval
-    // TODO: fetch github pr descriptions and index them for search
     sql += ' LIMIT 100';
 
     const stmt = this.db.prepare(sql);
@@ -340,6 +387,8 @@ export class LocalDB implements vscode.Disposable {
     this.db.run('DELETE FROM ballots');
     this.db.run('DELETE FROM pr_state');
     this.db.run('DELETE FROM index_metadata');
+    this.db.run('DELETE FROM evidence_entries');
+    this.db.run('DELETE FROM search_history');
 
     await this.persistToFile();
   }
@@ -647,6 +696,281 @@ export class LocalDB implements vscode.Disposable {
     countStmt.free();
 
     return result.count >= threshold;
+  }
+
+  /**
+   * Saves an evidence entry to the database.
+   *
+   * Evidence entries track structured data for PR reviews including test results,
+   * benchmarks, specifications, and risk assessments. This supports evidence-based
+   * review practices and helps teams maintain consistent documentation standards.
+   *
+   * @param evidence - The evidence entry to save (without id, timestamp auto-generated)
+   * @returns Promise resolving to the ID of the inserted entry
+   * @throws Error if database not initialized or validation fails
+   */
+  async saveEvidence(evidence: Omit<EvidenceEntry, 'id' | 'timestamp'>): Promise<number> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			INSERT INTO evidence_entries (
+				pr_reference,
+				tests_status,
+				tests_details,
+				benchmarks_status,
+				benchmarks_details,
+				spec_status,
+				spec_references,
+				risk_level,
+				identified_risks,
+				rollback_plan
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`);
+
+    stmt.bind([
+      evidence.pr_reference,
+      evidence.tests_status,
+      evidence.tests_details,
+      evidence.benchmarks_status,
+      evidence.benchmarks_details,
+      evidence.spec_status,
+      evidence.spec_references,
+      evidence.risk_level,
+      evidence.identified_risks,
+      evidence.rollback_plan,
+    ]);
+
+    stmt.step();
+    const lastInsertId = this.db.exec('SELECT last_insert_rowid() as id')[0].values[0][0] as number;
+    stmt.free();
+
+    await this.persistToFile();
+    return lastInsertId;
+  }
+
+  /**
+   * Retrieves all evidence entries for a specific PR.
+   *
+   * Used to display evidence history and track documentation completeness
+   * throughout the review lifecycle. Evidence entries are ordered by timestamp
+   * to show the progression of documentation.
+   *
+   * @param prReference - The PR identifier
+   * @returns Promise resolving to array of evidence entries
+   * @throws Error if database not initialized
+   */
+  async getEvidenceForPR(prReference: string): Promise<EvidenceEntry[]> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			SELECT * FROM evidence_entries
+			WHERE pr_reference = ?
+			ORDER BY timestamp DESC
+		`);
+
+    stmt.bind([prReference]);
+
+    const rows: EvidenceEntry[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as any;
+      rows.push({
+        id: row.id,
+        pr_reference: row.pr_reference,
+        timestamp: row.timestamp,
+        tests_status: row.tests_status,
+        tests_details: row.tests_details,
+        benchmarks_status: row.benchmarks_status,
+        benchmarks_details: row.benchmarks_details,
+        spec_status: row.spec_status,
+        spec_references: row.spec_references,
+        risk_level: row.risk_level,
+        identified_risks: row.identified_risks,
+        rollback_plan: row.rollback_plan,
+      });
+    }
+
+    stmt.free();
+    return rows;
+  }
+
+  /**
+   * Retrieves all evidence entries from the database.
+   *
+   * Used for analytics, reporting, and cross-PR evidence analysis.
+   * Returns all entries ordered by timestamp descending to show most recent first.
+   *
+   * @returns Promise resolving to array of all evidence entries
+   * @throws Error if database not initialized
+   */
+  async getAllEvidence(): Promise<EvidenceEntry[]> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			SELECT * FROM evidence_entries
+			ORDER BY timestamp DESC
+		`);
+
+    const rows: EvidenceEntry[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as any;
+      rows.push({
+        id: row.id,
+        pr_reference: row.pr_reference,
+        timestamp: row.timestamp,
+        tests_status: row.tests_status,
+        tests_details: row.tests_details,
+        benchmarks_status: row.benchmarks_status,
+        benchmarks_details: row.benchmarks_details,
+        spec_status: row.spec_status,
+        spec_references: row.spec_references,
+        risk_level: row.risk_level,
+        identified_risks: row.identified_risks,
+        rollback_plan: row.rollback_plan,
+      });
+    }
+
+    stmt.free();
+    return rows;
+  }
+
+  /**
+   * Adds a search query to the search history.
+   *
+   * Stores user search queries for quick re-execution and pattern analysis.
+   * Helps users navigate their workflow by tracking commonly searched terms.
+   *
+   * @param query - The search query string
+   * @param timestamp - Optional timestamp in ISO 8601 format (defaults to current time)
+   * @returns Promise resolving to the ID of the inserted entry
+   * @throws Error if database not initialized
+   */
+  async addSearchQuery(query: string, timestamp?: string): Promise<number> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    // use provided timestamp or generate current timestamp with millisecond precision
+    const ts = timestamp || new Date().toISOString();
+
+    const stmt = this.db.prepare(`
+			INSERT INTO search_history (query, timestamp)
+			VALUES (?, ?)
+		`);
+
+    stmt.bind([query, ts]);
+    stmt.step();
+    const lastInsertId = this.db.exec('SELECT last_insert_rowid() as id')[0].values[0][0] as number;
+    stmt.free();
+
+    await this.persistToFile();
+    return lastInsertId;
+  }
+
+  /**
+   * Retrieves recent search queries from history.
+   *
+   * Returns the most recent search queries ordered by timestamp descending.
+   * Used to populate the Recent Searches tree view section.
+   *
+   * @param limit - Maximum number of queries to return (default: 10)
+   * @returns Promise resolving to array of search history entries
+   * @throws Error if database not initialized
+   */
+  async getRecentSearches(limit: number = 10): Promise<SearchHistoryEntry[]> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			SELECT * FROM search_history
+			ORDER BY timestamp DESC
+			LIMIT ?
+		`);
+
+    stmt.bind([limit]);
+
+    const rows: SearchHistoryEntry[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as any;
+      rows.push({
+        id: row.id,
+        query: row.query,
+        timestamp: row.timestamp,
+      });
+    }
+
+    stmt.free();
+    return rows;
+  }
+
+  /**
+   * Marks ballots as posted to GitHub with comment URL and timestamp.
+   *
+   * Updates the pr_state table to record that ballot summary has been
+   * posted to GitHub PR as a comment. Used to prevent duplicate posts
+   * and track integration with GitHub workflow.
+   *
+   * @param prReference - The PR identifier
+   * @param commentUrl - GitHub comment HTML URL
+   * @returns Promise that resolves when metadata is stored
+   * @throws Error if database not initialized
+   */
+  async markBallotsPostedToGitHub(prReference: string, commentUrl: string): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			UPDATE pr_state
+			SET github_comment_url = ?,
+				github_posted_at = CURRENT_TIMESTAMP,
+				updated_at = CURRENT_TIMESTAMP
+			WHERE pr_reference = ?
+		`);
+
+    stmt.bind([commentUrl, prReference]);
+    stmt.step();
+    stmt.free();
+
+    await this.persistToFile();
+  }
+
+  /**
+   * Checks if ballots have already been posted to GitHub.
+   *
+   * Used to prevent duplicate ballot summary posts to the same PR.
+   * Returns true if a GitHub comment URL has been recorded for this PR.
+   *
+   * @param prReference - The PR identifier
+   * @returns Promise resolving to true if already posted
+   * @throws Error if database not initialized
+   */
+  async isPostedToGitHub(prReference: string): Promise<boolean> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			SELECT github_comment_url FROM pr_state
+			WHERE pr_reference = ?
+		`);
+
+    stmt.bind([prReference]);
+
+    let posted = false;
+    if (stmt.step()) {
+      const row = stmt.getAsObject() as { github_comment_url: string | null };
+      posted = row.github_comment_url !== null && row.github_comment_url !== '';
+    }
+
+    stmt.free();
+    return posted;
   }
 
   dispose(): void {

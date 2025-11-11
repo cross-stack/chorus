@@ -16,15 +16,10 @@ export class WelcomePanel {
     }
 
     // otherwise, create a new panel
-    const panel = vscode.window.createWebviewPanel(
-      'chorusWelcome',
-      'Welcome to Chorus',
-      column,
-      {
-        enableScripts: true,
-        localResourceRoots: [extensionUri],
-      }
-    );
+    const panel = vscode.window.createWebviewPanel('chorusWelcome', 'Welcome to Chorus', column, {
+      enableScripts: true,
+      localResourceRoots: [extensionUri],
+    });
 
     WelcomePanel.currentPanel = new WelcomePanel(panel, extensionUri);
   }

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
-import { LocalDB } from '../storage/LocalDB';
+import { LocalDB, BallotEntry } from '../storage/LocalDB';
 import { getGitUserInfo } from '../services/GitConfigService';
+import { GitHubService } from '../services/GitHubService';
 
 export class ChorusPanel {
   public static currentPanel: ChorusPanel | undefined;
@@ -8,8 +9,13 @@ export class ChorusPanel {
 
   private readonly panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
+  private readonly githubService: GitHubService | undefined;
 
-  public static createOrShow(extensionUri: vscode.Uri, db: LocalDB): void {
+  public static createOrShow(
+    extensionUri: vscode.Uri,
+    db: LocalDB,
+    githubService?: GitHubService
+  ): void {
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
       : undefined;
@@ -32,15 +38,17 @@ export class ChorusPanel {
       }
     );
 
-    ChorusPanel.currentPanel = new ChorusPanel(panel, extensionUri, db);
+    ChorusPanel.currentPanel = new ChorusPanel(panel, extensionUri, db, githubService);
   }
 
   private constructor(
     panel: vscode.WebviewPanel,
     private readonly extensionUri: vscode.Uri,
-    private readonly db: LocalDB
+    private readonly db: LocalDB,
+    githubService?: GitHubService
   ) {
     this.panel = panel;
+    this.githubService = githubService;
 
     this.update();
 
@@ -242,6 +250,13 @@ export class ChorusPanel {
         command: 'ballotsRevealed',
         ballots: ballots,
       });
+
+      // attempt to post ballot summary to github (async, non-blocking)
+      // this runs in background and doesn't block the reveal workflow
+      this.postBallotsToGitHub(prReference, ballots).catch((error) => {
+        // errors are already handled in postBallotsToGitHub
+        console.error('Background GitHub post failed:', error);
+      });
     } catch (error) {
       console.error('Ballot Reveal Failed:', error);
       await this.panel.webview.postMessage({
@@ -363,6 +378,203 @@ export class ChorusPanel {
 	<script src="${scriptUri}"></script>
 </body>
 </html>`;
+  }
+
+  /**
+   * Formats a ballot summary comment for GitHub PR posting.
+   *
+   * Generates a markdown-formatted summary of ballot results including:
+   * - Review phase completion timestamp
+   * - Total ballot count
+   * - Decision distribution (approve/neutral/reject)
+   * - Confidence level distribution
+   * - Average confidence score
+   * - Chorus branding footer
+   *
+   * @param ballots - Array of ballot entries to summarize
+   * @returns Formatted markdown string for GitHub comment
+   */
+  private formatBallotSummary(ballots: BallotEntry[]): string {
+    const timestamp = new Date().toISOString();
+    const totalCount = ballots.length;
+
+    // calculate decision distribution
+    const approveCount = ballots.filter((b) => b.decision === 'approve').length;
+    const neutralCount = ballots.filter((b) => b.decision === 'neutral').length;
+    const rejectCount = ballots.filter((b) => b.decision === 'reject').length;
+
+    // calculate percentages
+    const approvePercent = totalCount > 0 ? Math.round((approveCount / totalCount) * 100) : 0;
+    const neutralPercent = totalCount > 0 ? Math.round((neutralCount / totalCount) * 100) : 0;
+    const rejectPercent = totalCount > 0 ? Math.round((rejectCount / totalCount) * 100) : 0;
+
+    // calculate confidence distribution
+    const highConfidence = ballots.filter((b) => b.confidence >= 4).length;
+    const mediumConfidence = ballots.filter((b) => b.confidence === 3).length;
+    const lowConfidence = ballots.filter((b) => b.confidence <= 2).length;
+
+    // calculate average confidence
+    const avgConfidence =
+      totalCount > 0
+        ? (ballots.reduce((sum, b) => sum + b.confidence, 0) / totalCount).toFixed(1)
+        : '0.0';
+
+    return `## 🎭 Chorus Evidence - Blinded Review Results
+
+**Review Phase Completed**: ${timestamp}
+**Ballots Submitted**: ${totalCount}
+
+### Review Summary
+- ✅ Approve: ${approveCount} (${approvePercent}%)
+- ⏸️ Neutral: ${neutralCount} (${neutralPercent}%)
+- ❌ Reject: ${rejectCount} (${rejectPercent}%)
+
+### Confidence Distribution
+- High (4-5): ${highConfidence}
+- Medium (3): ${mediumConfidence}
+- Low (1-2): ${lowConfidence}
+
+**Average Confidence**: ${avgConfidence}/5
+
+---
+*Posted by [Chorus Evidence](https://github.com/cross-stack/chorus) - Evidence-first, bias-aware code review*`;
+  }
+
+  /**
+   * Posts ballot summary to GitHub PR as a comment.
+   *
+   * Implements privacy-first GitHub integration with:
+   * - User permission prompt before posting
+   * - Auto-post setting respect
+   * - Duplicate post prevention
+   * - PR reference parsing and validation
+   * - Error handling with user-friendly messages
+   *
+   * Workflow:
+   * 1. Check if already posted (prevent duplicates)
+   * 2. Parse PR reference to extract owner/repo/number
+   * 3. Detect GitHub repo from workspace (for short refs like #123)
+   * 4. Ask user permission (unless auto-post enabled)
+   * 5. Format ballot summary comment
+   * 6. Post comment via GitHubService
+   * 7. Store comment URL in database
+   * 8. Show success notification
+   *
+   * @param prReference - PR reference string (e.g., "owner/repo#123" or "#123")
+   * @param ballots - Array of ballot entries to summarize
+   * @returns Promise that resolves when posting completes or is cancelled
+   */
+  private async postBallotsToGitHub(prReference: string, ballots: BallotEntry[]): Promise<void> {
+    // check if github service is available
+    if (!this.githubService) {
+      console.log('ChorusPanel: GitHubService not available, skipping ballot post');
+      return;
+    }
+
+    try {
+      // check if already posted to prevent duplicates
+      const alreadyPosted = await this.db.isPostedToGitHub(prReference);
+      if (alreadyPosted) {
+        console.log(`ChorusPanel: Ballots already posted to GitHub for ${prReference}`);
+        return;
+      }
+
+      // parse pr reference
+      let owner: string;
+      let repo: string;
+      let prNumber: number;
+
+      // check if it's a short reference like #123
+      if (prReference.match(/^#(\d+)$/)) {
+        const match = prReference.match(/^#(\d+)$/);
+        if (!match) {
+          console.error('ChorusPanel: Invalid PR reference format');
+          return;
+        }
+
+        prNumber = parseInt(match[1], 10);
+
+        // detect github repo from workspace
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+          console.error('ChorusPanel: No workspace folder found for repo detection');
+          return;
+        }
+
+        const githubRepo = await this.githubService.detectGitHubRepo(
+          workspaceFolders[0].uri.fsPath
+        );
+        if (!githubRepo) {
+          console.error('ChorusPanel: Could not detect GitHub repository');
+          vscode.window.showWarningMessage(
+            'Could Not Detect GitHub Repository - Ballots Not Posted'
+          );
+          return;
+        }
+
+        owner = githubRepo.owner;
+        repo = githubRepo.repo;
+      } else {
+        // parse full reference like owner/repo#123
+        const parsed = this.githubService.parsePRReference(prReference);
+        if (!parsed) {
+          console.error(`ChorusPanel: Invalid PR reference format: ${prReference}`);
+          return;
+        }
+
+        owner = parsed.owner;
+        repo = parsed.repo;
+        prNumber = parsed.number;
+      }
+
+      // check auto-post setting
+      const config = vscode.workspace.getConfiguration('chorus');
+      const autoPost = config.get<boolean>('autoPostBallots', false);
+
+      // ask user permission unless auto-post is enabled
+      if (!autoPost) {
+        const selection = await vscode.window.showInformationMessage(
+          `Post Ballot Summary to GitHub PR #${prNumber}?`,
+          { modal: true },
+          'Post',
+          'Cancel'
+        );
+
+        if (selection !== 'Post') {
+          console.log('ChorusPanel: User cancelled ballot posting');
+          return;
+        }
+      }
+
+      // format ballot summary
+      const commentBody = this.formatBallotSummary(ballots);
+
+      // post comment to github
+      await this.githubService.createPRComment(owner, repo, prNumber, commentBody);
+
+      // construct comment url
+      const commentUrl = `https://github.com/${owner}/${repo}/pull/${prNumber}`;
+
+      // mark as posted in database
+      await this.db.markBallotsPostedToGitHub(prReference, commentUrl);
+
+      // show success notification
+      vscode.window.showInformationMessage(
+        `Ballot Summary Posted to GitHub PR #${prNumber}`,
+        'View PR'
+      ).then((selection) => {
+        if (selection === 'View PR') {
+          vscode.env.openExternal(vscode.Uri.parse(commentUrl));
+        }
+      });
+
+      console.log(`ChorusPanel: Ballot summary posted to ${commentUrl}`);
+    } catch (error) {
+      console.error('ChorusPanel: Failed to post ballots to GitHub:', error);
+      vscode.window.showErrorMessage(
+        `Failed to Post Ballots to GitHub: ${error instanceof Error ? error.message : 'Unknown Error'}`
+      );
+    }
   }
 
   public dispose(): void {

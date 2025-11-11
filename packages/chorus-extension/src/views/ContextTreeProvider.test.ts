@@ -3,6 +3,8 @@ import * as vscode from 'vscode';
 import { ContextTreeProvider, ContextItem } from './ContextTreeProvider';
 import { LocalDB, ContextEntry } from '../storage/LocalDB';
 import { Indexer } from '../services/Indexer';
+import { GitHubService } from '../services/GitHubService';
+import { GitHubPR, GitHubReview } from '../types/github';
 
 // mock vscode - using explicit external to avoid bundling issues
 vi.mock('vscode', () => ({
@@ -11,6 +13,9 @@ vi.mock('vscode', () => ({
     public iconPath?: any;
     public label: string;
     public collapsibleState: number;
+    public description?: string;
+    public tooltip?: string;
+    public command?: any;
     constructor(label: string, collapsibleState: number) {
       this.label = label;
       this.collapsibleState = collapsibleState;
@@ -42,6 +47,7 @@ vi.mock('vscode', () => ({
 describe('ContextTreeProvider', () => {
   let db: LocalDB;
   let indexer: Indexer;
+  let githubService: GitHubService;
   let provider: ContextTreeProvider;
 
   beforeEach(() => {
@@ -50,6 +56,7 @@ describe('ContextTreeProvider', () => {
       initialize: vi.fn(),
       getPRPhase: vi.fn().mockResolvedValue('blinded'),
       searchContext: vi.fn().mockResolvedValue([]),
+      getRecentSearches: vi.fn().mockResolvedValue([]),
     } as any;
 
     // create mock indexer
@@ -57,7 +64,14 @@ describe('ContextTreeProvider', () => {
       findRelevantContext: vi.fn().mockResolvedValue([]),
     } as any;
 
-    provider = new ContextTreeProvider(db, indexer);
+    // create mock github service
+    githubService = {
+      parsePRReference: vi.fn(),
+      getPullRequest: vi.fn(),
+      getPRReviews: vi.fn(),
+    } as any;
+
+    provider = new ContextTreeProvider(db, indexer, githubService);
   });
 
   describe('getTreeItem', () => {
@@ -218,6 +232,350 @@ describe('ContextTreeProvider', () => {
       const children = await provider.getChildren(category);
 
       expect(children[0].label).toBe('guide.md');
+    });
+  });
+
+  describe('PR tree items with GitHub integration', () => {
+    it('should display open PR with proper icon and status', async () => {
+      const mockPR: GitHubPR = {
+        number: 123,
+        title: 'Add new feature',
+        body: 'Description',
+        state: 'open',
+        html_url: 'https://github.com/owner/repo/pull/123',
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-02T00:00:00Z',
+        merged_at: null,
+        user: { login: 'testuser', avatar_url: 'https://example.com/avatar.jpg' },
+        head: { ref: 'feature', sha: 'abc123' },
+        base: { ref: 'main', sha: 'def456' },
+        labels: [],
+        draft: false,
+      };
+
+      const mockReviews: GitHubReview[] = [
+        {
+          id: 1,
+          user: { login: 'reviewer1', avatar_url: 'https://example.com/avatar.jpg' },
+          body: 'Looks good',
+          state: 'APPROVED',
+          submitted_at: '2023-01-02T00:00:00Z',
+          html_url: 'https://github.com/owner/repo/pull/123#review-1',
+        },
+      ];
+
+      const mockContext: ContextEntry[] = [
+        {
+          id: 1,
+          type: 'pr',
+          title: 'Add new feature',
+          path: 'owner/repo#123',
+          content: 'Description',
+          metadata: {},
+          indexed_at: '2023-01-01',
+        },
+      ];
+
+      vi.mocked(indexer.findRelevantContext).mockResolvedValue(mockContext);
+      vi.mocked(githubService.parsePRReference).mockReturnValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 123,
+      });
+      vi.mocked(githubService.getPullRequest).mockResolvedValue(mockPR);
+      vi.mocked(githubService.getPRReviews).mockResolvedValue(mockReviews);
+
+      (provider as any).currentFilePath = '/test/file.ts';
+
+      const section = new ContextItem(
+        'Current File Context',
+        vscode.TreeItemCollapsibleState.Expanded,
+        'section'
+      );
+
+      const children = await provider.getChildren(section);
+      const prCategory = children.find((c) => c.label?.toString().includes('Related PRs'));
+
+      expect(prCategory).toBeDefined();
+
+      const prItems = await provider.getChildren(prCategory!);
+
+      expect(prItems).toHaveLength(1);
+      expect(prItems[0].contextValue).toBe('pr');
+      expect(prItems[0].label).toContain('PR owner/repo#123');
+      expect(prItems[0].description).toContain('#123');
+      expect(prItems[0].description).toContain('✅ Approved');
+    });
+
+    it('should display merged PR with merge icon', async () => {
+      const mockPR: GitHubPR = {
+        number: 456,
+        title: 'Fix bug',
+        body: 'Bug fix description',
+        state: 'closed',
+        html_url: 'https://github.com/owner/repo/pull/456',
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-02T00:00:00Z',
+        merged_at: '2023-01-02T00:00:00Z',
+        user: { login: 'testuser', avatar_url: 'https://example.com/avatar.jpg' },
+        head: { ref: 'bugfix', sha: 'abc123' },
+        base: { ref: 'main', sha: 'def456' },
+        labels: [],
+        draft: false,
+      };
+
+      const mockContext: ContextEntry[] = [
+        {
+          id: 1,
+          type: 'pr',
+          title: 'Fix bug',
+          path: 'owner/repo#456',
+          content: 'Bug fix description',
+          metadata: {},
+          indexed_at: '2023-01-01',
+        },
+      ];
+
+      vi.mocked(indexer.findRelevantContext).mockResolvedValue(mockContext);
+      vi.mocked(githubService.parsePRReference).mockReturnValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 456,
+      });
+      vi.mocked(githubService.getPullRequest).mockResolvedValue(mockPR);
+      vi.mocked(githubService.getPRReviews).mockResolvedValue([]);
+
+      (provider as any).currentFilePath = '/test/file.ts';
+
+      const section = new ContextItem(
+        'Current File Context',
+        vscode.TreeItemCollapsibleState.Expanded,
+        'section'
+      );
+
+      const children = await provider.getChildren(section);
+      const prCategory = children.find((c) => c.label?.toString().includes('Related PRs'));
+      const prItems = await provider.getChildren(prCategory!);
+
+      expect(prItems[0].contextValue).toBe('pr-merged');
+    });
+
+    it('should display closed PR with closed icon', async () => {
+      const mockPR: GitHubPR = {
+        number: 789,
+        title: 'Experimental feature',
+        body: 'Not merged',
+        state: 'closed',
+        html_url: 'https://github.com/owner/repo/pull/789',
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-02T00:00:00Z',
+        merged_at: null,
+        user: { login: 'testuser', avatar_url: 'https://example.com/avatar.jpg' },
+        head: { ref: 'experiment', sha: 'abc123' },
+        base: { ref: 'main', sha: 'def456' },
+        labels: [],
+        draft: false,
+      };
+
+      const mockContext: ContextEntry[] = [
+        {
+          id: 1,
+          type: 'pr',
+          title: 'Experimental feature',
+          path: 'owner/repo#789',
+          content: 'Not merged',
+          metadata: {},
+          indexed_at: '2023-01-01',
+        },
+      ];
+
+      vi.mocked(indexer.findRelevantContext).mockResolvedValue(mockContext);
+      vi.mocked(githubService.parsePRReference).mockReturnValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 789,
+      });
+      vi.mocked(githubService.getPullRequest).mockResolvedValue(mockPR);
+      vi.mocked(githubService.getPRReviews).mockResolvedValue([]);
+
+      (provider as any).currentFilePath = '/test/file.ts';
+
+      const section = new ContextItem(
+        'Current File Context',
+        vscode.TreeItemCollapsibleState.Expanded,
+        'section'
+      );
+
+      const children = await provider.getChildren(section);
+      const prCategory = children.find((c) => c.label?.toString().includes('Related PRs'));
+      const prItems = await provider.getChildren(prCategory!);
+
+      expect(prItems[0].contextValue).toBe('pr-closed');
+    });
+
+    it('should show changes requested status', async () => {
+      const mockPR: GitHubPR = {
+        number: 111,
+        title: 'Needs changes',
+        body: 'Description',
+        state: 'open',
+        html_url: 'https://github.com/owner/repo/pull/111',
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-02T00:00:00Z',
+        merged_at: null,
+        user: { login: 'testuser', avatar_url: 'https://example.com/avatar.jpg' },
+        head: { ref: 'feature', sha: 'abc123' },
+        base: { ref: 'main', sha: 'def456' },
+        labels: [],
+        draft: false,
+      };
+
+      const mockReviews: GitHubReview[] = [
+        {
+          id: 1,
+          user: { login: 'reviewer1', avatar_url: 'https://example.com/avatar.jpg' },
+          body: 'Please fix this',
+          state: 'CHANGES_REQUESTED',
+          submitted_at: '2023-01-02T00:00:00Z',
+          html_url: 'https://github.com/owner/repo/pull/111#review-1',
+        },
+      ];
+
+      const mockContext: ContextEntry[] = [
+        {
+          id: 1,
+          type: 'pr',
+          title: 'Needs changes',
+          path: 'owner/repo#111',
+          content: 'Description',
+          metadata: {},
+          indexed_at: '2023-01-01',
+        },
+      ];
+
+      vi.mocked(indexer.findRelevantContext).mockResolvedValue(mockContext);
+      vi.mocked(githubService.parsePRReference).mockReturnValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 111,
+      });
+      vi.mocked(githubService.getPullRequest).mockResolvedValue(mockPR);
+      vi.mocked(githubService.getPRReviews).mockResolvedValue(mockReviews);
+
+      (provider as any).currentFilePath = '/test/file.ts';
+
+      const section = new ContextItem(
+        'Current File Context',
+        vscode.TreeItemCollapsibleState.Expanded,
+        'section'
+      );
+
+      const children = await provider.getChildren(section);
+      const prCategory = children.find((c) => c.label?.toString().includes('Related PRs'));
+      const prItems = await provider.getChildren(prCategory!);
+
+      expect(prItems[0].description).toContain('⏳ Changes Requested');
+    });
+  });
+
+  describe('Active Reviews section', () => {
+    it('should display PRs from database in active reviews', async () => {
+      const mockPRs: ContextEntry[] = [
+        {
+          id: 1,
+          type: 'pr',
+          title: 'Active PR 1',
+          path: 'owner/repo#100',
+          content: 'Description',
+          metadata: {},
+          indexed_at: '2023-01-01',
+        },
+      ];
+
+      vi.mocked(db.searchContext).mockResolvedValue(mockPRs);
+
+      const section = new ContextItem(
+        'Active Reviews',
+        vscode.TreeItemCollapsibleState.Expanded,
+        'section'
+      );
+
+      const children = await provider.getChildren(section);
+
+      expect(children.length).toBeGreaterThan(0);
+      expect(children[0].label).toContain('PR owner/repo#100');
+    });
+
+    it('should show no active reviews when database is empty', async () => {
+      vi.mocked(db.searchContext).mockResolvedValue([]);
+
+      const section = new ContextItem(
+        'Active Reviews',
+        vscode.TreeItemCollapsibleState.Expanded,
+        'section'
+      );
+
+      const children = await provider.getChildren(section);
+
+      expect(children).toHaveLength(1);
+      expect(children[0].label).toBe('No active reviews');
+    });
+  });
+
+  describe('Recent Searches section', () => {
+    it('should display recent searches from database', async () => {
+      const mockSearches = [
+        { id: 1, query: 'authentication', timestamp: '2023-01-01T00:00:00Z' },
+        { id: 2, query: 'database', timestamp: '2023-01-02T00:00:00Z' },
+      ];
+
+      vi.mocked(db.getRecentSearches).mockResolvedValue(mockSearches);
+
+      const section = new ContextItem(
+        'Recent Searches',
+        vscode.TreeItemCollapsibleState.Expanded,
+        'section'
+      );
+
+      const children = await provider.getChildren(section);
+
+      expect(children).toHaveLength(2);
+      expect(children[0].label).toBe('authentication');
+      expect(children[1].label).toBe('database');
+      expect(children[0].contextValue).toBe('search');
+    });
+
+    it('should show no recent searches when database is empty', async () => {
+      vi.mocked(db.getRecentSearches).mockResolvedValue([]);
+
+      const section = new ContextItem(
+        'Recent Searches',
+        vscode.TreeItemCollapsibleState.Expanded,
+        'section'
+      );
+
+      const children = await provider.getChildren(section);
+
+      expect(children).toHaveLength(1);
+      expect(children[0].label).toBe('No recent searches');
+    });
+
+    it('should add command to re-execute search', async () => {
+      const mockSearches = [{ id: 1, query: 'test query', timestamp: '2023-01-01T00:00:00Z' }];
+
+      vi.mocked(db.getRecentSearches).mockResolvedValue(mockSearches);
+
+      const section = new ContextItem(
+        'Recent Searches',
+        vscode.TreeItemCollapsibleState.Expanded,
+        'section'
+      );
+
+      const children = await provider.getChildren(section);
+
+      expect(children[0].command).toBeDefined();
+      expect(children[0].command.command).toBe('chorus.executeSearch');
+      expect(children[0].command.arguments).toEqual(['test query']);
     });
   });
 });

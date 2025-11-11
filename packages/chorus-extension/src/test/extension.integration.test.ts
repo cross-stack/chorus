@@ -13,6 +13,7 @@ vi.mock('vscode', () => ({
     activeTextEditor: null,
     showInformationMessage: vi.fn(),
     showErrorMessage: vi.fn(),
+    showWarningMessage: vi.fn(),
     showInputBox: vi.fn(),
     showQuickPick: vi.fn(),
     createWebviewPanel: vi.fn().mockReturnValue({
@@ -48,6 +49,12 @@ vi.mock('vscode', () => ({
     workspaceFolders: [],
     asRelativePath: vi.fn(),
     findFiles: vi.fn().mockResolvedValue([]),
+    createFileSystemWatcher: vi.fn().mockReturnValue({
+      onDidCreate: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidChange: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidDelete: vi.fn(() => ({ dispose: vi.fn() })),
+      dispose: vi.fn(),
+    }),
   },
   Uri: {
     joinPath: vi.fn(),
@@ -256,7 +263,7 @@ describe('Extension Integration', () => {
           await handler();
         }
 
-        expect(vscode.window.showInformationMessage).toHaveBeenCalledWith('No active editor');
+        expect(vscode.window.showInformationMessage).toHaveBeenCalledWith('No Active Editor');
       });
 
       it('should paste evidence template when editor is active', async () => {
@@ -272,6 +279,9 @@ describe('Extension Integration', () => {
         };
 
         (vscode.window as any).activeTextEditor = mockEditor as any;
+
+        // mock showInputBox to provide PR reference
+        (vscode.window as any).showInputBox = vi.fn().mockResolvedValue('#123');
 
         const handler = commandHandlers.get('chorus.addEvidence');
         if (handler) {

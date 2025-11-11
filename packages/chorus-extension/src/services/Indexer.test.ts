@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Indexer } from './Indexer';
-import { TestDatabase, createMockVSCodeWorkspace } from '../test/testUtils';
+import { TestDatabase, createMockVSCodeWorkspace, createMockVSCodeExtensionContext } from '../test/testUtils';
 import * as GitService from './GitService';
+import { GitHubService } from './GitHubService';
+import { GitHubPR, GitHubComment, GitHubReview } from '../types/github';
 
 // mock vscode module
 vi.mock('vscode', () => ({
@@ -13,6 +15,13 @@ vi.mock('vscode', () => ({
   RelativePattern: vi.fn(),
   Uri: {
     joinPath: vi.fn(),
+  },
+  window: {
+    setStatusBarMessage: vi.fn(),
+    showWarningMessage: vi.fn(),
+  },
+  commands: {
+    executeCommand: vi.fn(),
   },
 }));
 
@@ -540,6 +549,419 @@ describe('Indexer', () => {
       expect(endTime - startTime).toBeLessThan(200);
       expect(results).toBeDefined();
       expect(results.length).toBeLessThanOrEqual(10);
+    });
+  });
+
+  describe('GitHub PR indexing', () => {
+    let mockGitHubService: any;
+    let indexerWithGitHub: Indexer;
+
+    const mockPR: GitHubPR = {
+      number: 123,
+      title: 'Add authentication feature',
+      body: 'This PR implements OAuth2 authentication flow',
+      state: 'open',
+      html_url: 'https://github.com/test/repo/pull/123',
+      created_at: '2023-01-01T00:00:00Z',
+      updated_at: '2023-01-02T00:00:00Z',
+      merged_at: null,
+      user: {
+        login: 'testuser',
+        avatar_url: 'https://avatars.githubusercontent.com/u/123',
+      },
+      head: {
+        ref: 'feat/auth',
+        sha: 'abc123',
+      },
+      base: {
+        ref: 'main',
+        sha: 'def456',
+      },
+      labels: [
+        { name: 'feature', color: 'green' },
+        { name: 'backend', color: 'blue' },
+      ],
+      draft: false,
+    };
+
+    const mockComments: GitHubComment[] = [
+      {
+        id: 1,
+        body: 'Great work on the OAuth implementation!',
+        user: { login: 'reviewer1', avatar_url: '' },
+        created_at: '2023-01-01T12:00:00Z',
+        updated_at: '2023-01-01T12:00:00Z',
+        html_url: 'https://github.com/test/repo/pull/123#issuecomment-1',
+      },
+      {
+        id: 2,
+        body: 'Should we add rate limiting?',
+        user: { login: 'reviewer2', avatar_url: '' },
+        created_at: '2023-01-02T08:00:00Z',
+        updated_at: '2023-01-02T08:00:00Z',
+        html_url: 'https://github.com/test/repo/pull/123#issuecomment-2',
+      },
+    ];
+
+    const mockReviews: GitHubReview[] = [
+      {
+        id: 1,
+        user: { login: 'reviewer1', avatar_url: '' },
+        body: 'Looks good to me!',
+        state: 'APPROVED',
+        submitted_at: '2023-01-02T10:00:00Z',
+        html_url: 'https://github.com/test/repo/pull/123#pullrequestreview-1',
+      },
+      {
+        id: 2,
+        user: { login: 'reviewer2', avatar_url: '' },
+        body: 'Please address the rate limiting concern',
+        state: 'CHANGES_REQUESTED',
+        submitted_at: '2023-01-02T11:00:00Z',
+        html_url: 'https://github.com/test/repo/pull/123#pullrequestreview-2',
+      },
+    ];
+
+    beforeEach(() => {
+      // create mock github service
+      mockGitHubService = {
+        detectGitHubRepo: vi.fn(),
+        listPullRequests: vi.fn(),
+        getPRComments: vi.fn(),
+        getPRReviews: vi.fn(),
+      };
+
+      indexerWithGitHub = new Indexer(testDb.db, mockGitHubService);
+    });
+
+    it('should skip indexing if GitHubService not available', async () => {
+      const indexerNoGitHub = new Indexer(testDb.db);
+      const mockVscode = await import('vscode');
+      mockVscode.workspace.workspaceFolders = [
+        {
+          uri: { fsPath: '/test/workspace' },
+          name: 'test',
+        },
+      ] as any;
+
+      vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue([]);
+      mockVscode.workspace.findFiles = vi.fn().mockResolvedValue([]);
+
+      await indexerNoGitHub.indexWorkspace();
+
+      // should complete without errors
+      const results = await testDb.db.searchContext('');
+      const prEntries = results.filter((r) => r.type === 'pr');
+      expect(prEntries).toHaveLength(0);
+    });
+
+    it('should skip indexing if not a GitHub repo', async () => {
+      mockGitHubService.detectGitHubRepo.mockResolvedValue(null);
+
+      const mockVscode = await import('vscode');
+      mockVscode.workspace.workspaceFolders = [
+        {
+          uri: { fsPath: '/test/workspace' },
+          name: 'test',
+        },
+      ] as any;
+
+      vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue([]);
+      mockVscode.workspace.findFiles = vi.fn().mockResolvedValue([]);
+
+      await indexerWithGitHub.indexWorkspace();
+
+      expect(mockGitHubService.detectGitHubRepo).toHaveBeenCalledWith('/test/workspace');
+      expect(mockGitHubService.listPullRequests).not.toHaveBeenCalled();
+    });
+
+    it('should index open and closed PRs', async () => {
+      mockGitHubService.detectGitHubRepo.mockResolvedValue({ owner: 'test', repo: 'repo' });
+      mockGitHubService.listPullRequests.mockImplementation(
+        async (owner: string, repo: string, state: string) => {
+          if (state === 'open') {
+            return [mockPR];
+          }
+          if (state === 'closed') {
+            return [{ ...mockPR, number: 124, state: 'closed' }];
+          }
+          return [];
+        }
+      );
+      mockGitHubService.getPRComments.mockResolvedValue(mockComments);
+      mockGitHubService.getPRReviews.mockResolvedValue(mockReviews);
+
+      const mockVscode = await import('vscode');
+      mockVscode.workspace.workspaceFolders = [
+        {
+          uri: { fsPath: '/test/workspace' },
+          name: 'test',
+        },
+      ] as any;
+
+      vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue([]);
+      mockVscode.workspace.findFiles = vi.fn().mockResolvedValue([]);
+
+      await indexerWithGitHub.indexWorkspace();
+
+      // verify PRs were indexed
+      const results = await testDb.db.searchContext('authentication');
+      const prEntries = results.filter((r) => r.type === 'pr');
+      expect(prEntries.length).toBeGreaterThan(0);
+
+      // check PR metadata
+      const prEntry = prEntries[0];
+      expect(prEntry.title).toContain('#123');
+      expect(prEntry.title).toContain('Add authentication feature');
+      expect(prEntry.metadata.prNumber).toBe(123);
+      expect(prEntry.metadata.state).toBe('open');
+      expect(prEntry.metadata.author).toBe('testuser');
+      expect(prEntry.metadata.labels).toEqual(['feature', 'backend']);
+    });
+
+    it('should concatenate PR body, comments, and reviews', async () => {
+      mockGitHubService.detectGitHubRepo.mockResolvedValue({ owner: 'test', repo: 'repo' });
+      mockGitHubService.listPullRequests.mockResolvedValue([mockPR]);
+      mockGitHubService.getPRComments.mockResolvedValue(mockComments);
+      mockGitHubService.getPRReviews.mockResolvedValue(mockReviews);
+
+      const mockVscode = await import('vscode');
+      mockVscode.workspace.workspaceFolders = [
+        {
+          uri: { fsPath: '/test/workspace' },
+          name: 'test',
+        },
+      ] as any;
+
+      vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue([]);
+      mockVscode.workspace.findFiles = vi.fn().mockResolvedValue([]);
+
+      await indexerWithGitHub.indexWorkspace();
+
+      const results = await testDb.db.searchContext('authentication');
+      const prEntry = results.find((r) => r.type === 'pr');
+
+      expect(prEntry).toBeDefined();
+      expect(prEntry!.content).toContain('This PR implements OAuth2 authentication flow');
+      expect(prEntry!.content).toContain('Great work on the OAuth implementation!');
+      expect(prEntry!.content).toContain('Should we add rate limiting?');
+      expect(prEntry!.content).toContain('Looks good to me!');
+      expect(prEntry!.content).toContain('Please address the rate limiting concern');
+      expect(prEntry!.metadata.comments_count).toBe(2);
+      expect(prEntry!.metadata.reviews_count).toBe(2);
+    });
+
+    it('should handle merged PRs correctly', async () => {
+      const mergedPR = { ...mockPR, state: 'closed' as const, merged_at: '2023-01-03T00:00:00Z' };
+      mockGitHubService.detectGitHubRepo.mockResolvedValue({ owner: 'test', repo: 'repo' });
+      mockGitHubService.listPullRequests.mockResolvedValue([mergedPR]);
+      mockGitHubService.getPRComments.mockResolvedValue([]);
+      mockGitHubService.getPRReviews.mockResolvedValue([]);
+
+      const mockVscode = await import('vscode');
+      mockVscode.workspace.workspaceFolders = [
+        {
+          uri: { fsPath: '/test/workspace' },
+          name: 'test',
+        },
+      ] as any;
+
+      vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue([]);
+      mockVscode.workspace.findFiles = vi.fn().mockResolvedValue([]);
+
+      await indexerWithGitHub.indexWorkspace();
+
+      const results = await testDb.db.searchContext('authentication');
+      const prEntry = results.find((r) => r.type === 'pr');
+
+      expect(prEntry).toBeDefined();
+      expect(prEntry!.metadata.state).toBe('merged');
+    });
+
+    it('should handle PRs with no comments or reviews', async () => {
+      mockGitHubService.detectGitHubRepo.mockResolvedValue({ owner: 'test', repo: 'repo' });
+      mockGitHubService.listPullRequests.mockResolvedValue([mockPR]);
+      mockGitHubService.getPRComments.mockResolvedValue([]);
+      mockGitHubService.getPRReviews.mockResolvedValue([]);
+
+      const mockVscode = await import('vscode');
+      mockVscode.workspace.workspaceFolders = [
+        {
+          uri: { fsPath: '/test/workspace' },
+          name: 'test',
+        },
+      ] as any;
+
+      vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue([]);
+      mockVscode.workspace.findFiles = vi.fn().mockResolvedValue([]);
+
+      await indexerWithGitHub.indexWorkspace();
+
+      const results = await testDb.db.searchContext('authentication');
+      const prEntry = results.find((r) => r.type === 'pr');
+
+      expect(prEntry).toBeDefined();
+      expect(prEntry!.content).toBe('This PR implements OAuth2 authentication flow');
+      expect(prEntry!.metadata.comments_count).toBe(0);
+      expect(prEntry!.metadata.reviews_count).toBe(0);
+    });
+
+    it('should handle GitHub API errors gracefully', async () => {
+      mockGitHubService.detectGitHubRepo.mockResolvedValue({ owner: 'test', repo: 'repo' });
+      mockGitHubService.listPullRequests.mockRejectedValue(new Error('API Error'));
+
+      const mockVscode = await import('vscode');
+      mockVscode.workspace.workspaceFolders = [
+        {
+          uri: { fsPath: '/test/workspace' },
+          name: 'test',
+        },
+      ] as any;
+
+      vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue([]);
+      mockVscode.workspace.findFiles = vi.fn().mockResolvedValue([]);
+
+      // should not throw
+      await expect(indexerWithGitHub.indexWorkspace()).resolves.not.toThrow();
+    });
+
+    it('should handle rate limit errors with warning', async () => {
+      const rateLimitError: any = new Error('Rate limit exceeded');
+      rateLimitError.status = 403;
+      rateLimitError.message = 'API rate limit exceeded';
+
+      mockGitHubService.detectGitHubRepo.mockResolvedValue({ owner: 'test', repo: 'repo' });
+      mockGitHubService.listPullRequests.mockRejectedValue(rateLimitError);
+
+      const mockVscode = await import('vscode');
+      mockVscode.workspace.workspaceFolders = [
+        {
+          uri: { fsPath: '/test/workspace' },
+          name: 'test',
+        },
+      ] as any;
+
+      vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue([]);
+      mockVscode.workspace.findFiles = vi.fn().mockResolvedValue([]);
+
+      // should not throw
+      await expect(indexerWithGitHub.indexWorkspace()).resolves.not.toThrow();
+    });
+
+    it('should search PR content with BM25 ranking', async () => {
+      mockGitHubService.detectGitHubRepo.mockResolvedValue({ owner: 'test', repo: 'repo' });
+      mockGitHubService.listPullRequests.mockResolvedValue([mockPR]);
+      mockGitHubService.getPRComments.mockResolvedValue(mockComments);
+      mockGitHubService.getPRReviews.mockResolvedValue(mockReviews);
+
+      const mockVscode = await import('vscode');
+      mockVscode.workspace.workspaceFolders = [
+        {
+          uri: { fsPath: '/test/workspace' },
+          name: 'test',
+        },
+      ] as any;
+
+      vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue([]);
+      mockVscode.workspace.findFiles = vi.fn().mockResolvedValue([]);
+
+      await indexerWithGitHub.indexWorkspace();
+
+      // search for terms from PR comments
+      const results = await indexerWithGitHub.findRelevantContext('auth.ts', 'rate limiting');
+
+      // should find PR entry with comment about rate limiting
+      const prEntry = results.find((r) => r.type === 'pr');
+      expect(prEntry).toBeDefined();
+      expect(prEntry!.content).toContain('rate limiting');
+    });
+
+    it('should include PR metadata in search results', async () => {
+      mockGitHubService.detectGitHubRepo.mockResolvedValue({ owner: 'test', repo: 'repo' });
+      mockGitHubService.listPullRequests.mockResolvedValue([mockPR]);
+      mockGitHubService.getPRComments.mockResolvedValue([]);
+      mockGitHubService.getPRReviews.mockResolvedValue([]);
+
+      const mockVscode = await import('vscode');
+      mockVscode.workspace.workspaceFolders = [
+        {
+          uri: { fsPath: '/test/workspace' },
+          name: 'test',
+        },
+      ] as any;
+
+      vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue([]);
+      mockVscode.workspace.findFiles = vi.fn().mockResolvedValue([]);
+
+      await indexerWithGitHub.indexWorkspace();
+
+      const results = await testDb.db.searchContext('authentication');
+      const prEntry = results.find((r) => r.type === 'pr');
+
+      expect(prEntry).toBeDefined();
+      expect(prEntry!.path).toBe('https://github.com/test/repo/pull/123');
+      expect(prEntry!.metadata.draft).toBe(false);
+      expect(prEntry!.metadata.head_ref).toBe('feat/auth');
+      expect(prEntry!.metadata.base_ref).toBe('main');
+    });
+
+    it('should handle null PR body', async () => {
+      const prWithNullBody = { ...mockPR, body: null };
+      mockGitHubService.detectGitHubRepo.mockResolvedValue({ owner: 'test', repo: 'repo' });
+      mockGitHubService.listPullRequests.mockResolvedValue([prWithNullBody]);
+      mockGitHubService.getPRComments.mockResolvedValue([]);
+      mockGitHubService.getPRReviews.mockResolvedValue([]);
+
+      const mockVscode = await import('vscode');
+      mockVscode.workspace.workspaceFolders = [
+        {
+          uri: { fsPath: '/test/workspace' },
+          name: 'test',
+        },
+      ] as any;
+
+      vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue([]);
+      mockVscode.workspace.findFiles = vi.fn().mockResolvedValue([]);
+
+      await indexerWithGitHub.indexWorkspace();
+
+      const results = await testDb.db.searchContext('authentication');
+      const prEntry = results.find((r) => r.type === 'pr');
+
+      expect(prEntry).toBeDefined();
+      expect(prEntry!.content).toBe('');
+    });
+
+    it('should handle reviews with null body', async () => {
+      const reviewsWithNullBody = [
+        { ...mockReviews[0], body: null },
+        { ...mockReviews[1] },
+      ];
+      mockGitHubService.detectGitHubRepo.mockResolvedValue({ owner: 'test', repo: 'repo' });
+      mockGitHubService.listPullRequests.mockResolvedValue([mockPR]);
+      mockGitHubService.getPRComments.mockResolvedValue([]);
+      mockGitHubService.getPRReviews.mockResolvedValue(reviewsWithNullBody);
+
+      const mockVscode = await import('vscode');
+      mockVscode.workspace.workspaceFolders = [
+        {
+          uri: { fsPath: '/test/workspace' },
+          name: 'test',
+        },
+      ] as any;
+
+      vi.spyOn(GitService, 'simpleGitLog').mockResolvedValue([]);
+      mockVscode.workspace.findFiles = vi.fn().mockResolvedValue([]);
+
+      await indexerWithGitHub.indexWorkspace();
+
+      const results = await testDb.db.searchContext('authentication');
+      const prEntry = results.find((r) => r.type === 'pr');
+
+      expect(prEntry).toBeDefined();
+      // should only contain non-null review body
+      expect(prEntry!.content).not.toContain('Looks good to me!');
+      expect(prEntry!.content).toContain('Please address the rate limiting concern');
     });
   });
 });

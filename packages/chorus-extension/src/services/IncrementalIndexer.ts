@@ -429,6 +429,27 @@ export class IncrementalIndexer {
   }
 
   /**
+   * Reindexes a specific PR by number.
+   *
+   * Useful when a PR has been updated and needs to be refreshed in the index.
+   * This is a manual operation and not triggered automatically by file watchers.
+   *
+   * @param owner - Repository owner
+   * @param repo - Repository name
+   * @param prNumber - PR number to reindex
+   */
+  async reindexPR(owner: string, repo: string, prNumber: number): Promise<void> {
+    console.log(`IncrementalIndexer: Reindexing PR ${owner}/${repo}#${prNumber}`);
+
+    // note: full implementation would require access to GitHubService and Indexer
+    // for now, this is a placeholder that shows the intended interface
+    // the actual reindexing would fetch the PR and replace the existing entry
+
+    console.log('IncrementalIndexer: PR reindexing not yet implemented');
+    console.log('IncrementalIndexer: Use forceReindex() to refresh all data including PRs');
+  }
+
+  /**
    * Forces a complete re-index of the workspace.
    *
    * Clears all index metadata and context entries, then re-indexes everything.
@@ -504,7 +525,11 @@ export class IncrementalIndexer {
    * @param current - Current progress count
    * @param total - Total items to process (optional)
    */
-  private updateStatusBar(state: 'indexing' | 'ready' | 'error', current: number, total?: number): void {
+  private updateStatusBar(
+    state: 'indexing' | 'ready' | 'error',
+    current: number,
+    total?: number
+  ): void {
     switch (state) {
       case 'indexing':
         if (total !== undefined && total > 0) {

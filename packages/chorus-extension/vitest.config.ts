@@ -13,7 +13,8 @@ export default defineConfig({
       exclude: [
         'src/**/*.test.ts',
         'src/**/*.d.ts',
-        'src/test/**/*'
+        'src/test/**/*',
+        'src/types/**/*'
       ],
       thresholds: {
         lines: 80,
