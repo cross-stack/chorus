@@ -9,6 +9,13 @@ import {
   RetrospectiveFilters,
   ReflectionAnalytics,
 } from '../types/reflection';
+import { EvidenceEntry } from '../types/evidence';
+import {
+  DecisionSchemeEntry,
+  RetrospectiveEntry,
+  RetrospectiveFilters,
+  ReflectionAnalytics,
+} from '../types/reflection';
 
 export interface ContextEntry {
   id?: number;
@@ -26,6 +33,12 @@ export interface NudgeResponses {
   dissentingViews?: string;
 }
 
+export interface NudgeResponses {
+  consideredAlternatives: boolean;
+  mainRisk: string;
+  dissentingViews?: string;
+}
+
 export interface BallotEntry {
   id?: number;
   pr_reference: string;
@@ -33,6 +46,7 @@ export interface BallotEntry {
   confidence: number; // 1-5
   rationale: string;
   author_metadata: string; // JSON string, revealed after submission
+  nudge_responses?: string; // JSON string with elaboration nudge responses
   nudge_responses?: string; // JSON string with elaboration nudge responses
   created_at: string;
   revealed: boolean;
@@ -48,11 +62,41 @@ export interface PRState {
   first_pass_deadline?: string;
   github_comment_url?: string;
   github_posted_at?: string;
-  github_comment_url?: string;
-  github_posted_at?: string;
   created_at: string;
   updated_at: string;
 }
+
+export interface SearchHistoryEntry {
+  id?: number;
+  query: string;
+  timestamp: string;
+}
+
+/**
+ * PR outcome tracking for calibration feedback
+ */
+export interface PROutcome {
+  id?: number;
+  pr_id: string;
+  outcome_type: 'merged_clean' | 'bug_found' | 'reverted' | 'followup_required';
+  detected_auto: boolean;
+  user_confirmed: boolean;
+  detection_details: string; // JSON with detection info
+  timestamp: string;
+}
+
+/**
+ * Calibration data point joining ballot with outcome
+ */
+export interface CalibrationDataPoint {
+  pr_reference: string;
+  confidence: number; // 1-5
+  decision: 'approve' | 'reject' | 'neutral';
+  outcome_type: string;
+  outcome_success: boolean; // true if decision aligned with outcome
+}
+
+export { EvidenceEntry, DecisionSchemeEntry, RetrospectiveEntry, RetrospectiveFilters, ReflectionAnalytics };
 
 export interface SearchHistoryEntry {
   id?: number;
@@ -187,10 +231,30 @@ export class LocalDB implements vscode.Disposable {
 				rationale TEXT NOT NULL,
 				author_metadata TEXT NOT NULL DEFAULT '{}',
 				nudge_responses TEXT DEFAULT '{}',
+				nudge_responses TEXT DEFAULT '{}',
 				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 				revealed INTEGER NOT NULL DEFAULT 0
 			)
 		`);
+
+    // migrate existing ballots table to add nudge_responses column
+    // check if column exists first to avoid errors on repeated migrations
+    try {
+      const tableInfo = this.db.exec("PRAGMA table_info(ballots)");
+      const hasNudgeColumn = tableInfo.length > 0 &&
+        tableInfo[0].values.some((row: any[]) => row[1] === 'nudge_responses');
+
+      if (!hasNudgeColumn) {
+        this.db.run(`
+          ALTER TABLE ballots
+          ADD COLUMN nudge_responses TEXT DEFAULT '{}'
+        `);
+        console.log('LocalDB: Added nudge_responses column to ballots table');
+      }
+    } catch (error) {
+      // column might not exist yet, which is fine - it will be created with CREATE TABLE
+      console.log('LocalDB: nudge_responses column migration check skipped:', error);
+    }
 
     // migrate existing ballots table to add nudge_responses column
     // check if column exists first to avoid errors on repeated migrations
@@ -218,16 +282,12 @@ export class LocalDB implements vscode.Disposable {
     // ballot_threshold: minimum number of ballots required before reveal is allowed
     // github_comment_url: url of posted ballot summary comment on github pr
     // github_posted_at: timestamp when ballot summary was posted to github
-    // github_comment_url: url of posted ballot summary comment on github pr
-    // github_posted_at: timestamp when ballot summary was posted to github
     this.db.run(`
 			CREATE TABLE IF NOT EXISTS pr_state (
 				pr_reference TEXT PRIMARY KEY,
 				phase TEXT NOT NULL CHECK (phase IN ('blinded', 'revealed')),
 				ballot_threshold INTEGER NOT NULL DEFAULT 3,
 				first_pass_deadline DATETIME,
-				github_comment_url TEXT,
-				github_posted_at DATETIME,
 				github_comment_url TEXT,
 				github_posted_at DATETIME,
 				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -326,11 +386,98 @@ export class LocalDB implements vscode.Disposable {
 			)
 		`);
 
+    // evidence_entries table - tracks evidence blocks for PRs
+    // stores structured evidence data for tests, benchmarks, specs, and risk assessments
+    // supports validation and tracking of evidence completeness across PR lifecycle
+    this.db.run(`
+			CREATE TABLE IF NOT EXISTS evidence_entries (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				pr_reference TEXT NOT NULL,
+				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				tests_status TEXT NOT NULL CHECK (tests_status IN ('complete', 'in_progress', 'n/a')),
+				tests_details TEXT NOT NULL DEFAULT '',
+				benchmarks_status TEXT NOT NULL CHECK (benchmarks_status IN ('complete', 'in_progress', 'n/a')),
+				benchmarks_details TEXT NOT NULL DEFAULT '',
+				spec_status TEXT NOT NULL CHECK (spec_status IN ('complete', 'in_progress', 'n/a')),
+				spec_references TEXT NOT NULL DEFAULT '',
+				risk_level TEXT NOT NULL CHECK (risk_level IN ('low', 'medium', 'high')),
+				identified_risks TEXT NOT NULL DEFAULT '',
+				rollback_plan TEXT NOT NULL DEFAULT ''
+			)
+		`);
+
+    // search_history table - tracks user search queries for context discovery
+    // stores search history to enable quick re-execution of previous searches
+    // supports search patterns analysis and helps users navigate their workflow
+    this.db.run(`
+			CREATE TABLE IF NOT EXISTS search_history (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				query TEXT NOT NULL,
+				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			)
+		`);
+
+    // pr_outcomes table - tracks pr outcomes for calibration feedback
+    // stores detected and user-confirmed outcomes to enable confidence calibration
+    // outcome_type: merged_clean (no issues), bug_found (fix needed), reverted (rollback), followup_required (additional work)
+    // detected_auto: true if detected by automatic pattern matching
+    // user_confirmed: true if user manually confirmed or overrode the outcome
+    // detection_details: JSON object with commits, keywords, confidence score
+    this.db.run(`
+			CREATE TABLE IF NOT EXISTS pr_outcomes (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				pr_id TEXT NOT NULL,
+				outcome_type TEXT NOT NULL CHECK (outcome_type IN ('merged_clean', 'bug_found', 'reverted', 'followup_required')),
+				detected_auto INTEGER NOT NULL DEFAULT 0,
+				user_confirmed INTEGER NOT NULL DEFAULT 0,
+				detection_details TEXT,
+				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (pr_id) REFERENCES pr_state(pr_reference)
+			)
+		`);
+
+    // decision_schemes table - tracks which social judgment scheme was used for each pr
+    // supports meta-decision tracking and reflection on decision-making patterns
+    // helps teams understand which decision rules work best for different contexts
+    this.db.run(`
+			CREATE TABLE IF NOT EXISTS decision_schemes (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				pr_id TEXT NOT NULL,
+				scheme_type TEXT NOT NULL CHECK (scheme_type IN ('consensus', 'truth_wins', 'majority', 'expert_veto', 'unanimous', 'custom')),
+				rationale TEXT NOT NULL,
+				custom_scheme_name TEXT,
+				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (pr_id) REFERENCES pr_state(pr_reference)
+			)
+		`);
+
+    // retrospectives table - tracks post-mortem reflections on pr outcomes
+    // supports continuous improvement and bias awareness
+    // helps teams learn from mistakes and adjust review processes
+    this.db.run(`
+			CREATE TABLE IF NOT EXISTS retrospectives (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				pr_id TEXT NOT NULL,
+				trigger_type TEXT NOT NULL CHECK (trigger_type IN ('manual', 'auto_bug_found', 'auto_revert')),
+				what_went_wrong TEXT NOT NULL,
+				what_to_improve TEXT NOT NULL,
+				bias_patterns TEXT NOT NULL DEFAULT '[]',
+				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (pr_id) REFERENCES pr_state(pr_reference)
+			)
+		`);
+
     // create indexes for better search performance
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_context_type ON context_entries(type)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_context_path ON context_entries(path)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_ballots_pr ON ballots(pr_reference)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_pr_state_phase ON pr_state(phase)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_evidence_pr ON evidence_entries(pr_reference)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_search_history_ts ON search_history(timestamp DESC)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_pr_outcomes_pr ON pr_outcomes(pr_id)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_decision_schemes_pr ON decision_schemes(pr_id)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_retrospectives_pr ON retrospectives(pr_id)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_retrospectives_ts ON retrospectives(timestamp DESC)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_evidence_pr ON evidence_entries(pr_reference)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_search_history_ts ON search_history(timestamp DESC)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_pr_outcomes_pr ON pr_outcomes(pr_id)`);
@@ -404,6 +551,8 @@ export class LocalDB implements vscode.Disposable {
     const stmt = this.db.prepare(`
 			INSERT INTO ballots (pr_reference, decision, confidence, rationale, author_metadata, nudge_responses, revealed)
 			VALUES (?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO ballots (pr_reference, decision, confidence, rationale, author_metadata, nudge_responses, revealed)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
 		`);
 
     stmt.bind([
@@ -412,6 +561,7 @@ export class LocalDB implements vscode.Disposable {
       ballot.confidence,
       ballot.rationale,
       ballot.author_metadata,
+      ballot.nudge_responses || '{}',
       ballot.nudge_responses || '{}',
       ballot.revealed ? 1 : 0,
     ]);
@@ -505,6 +655,11 @@ export class LocalDB implements vscode.Disposable {
     this.db.run('DELETE FROM ballots');
     this.db.run('DELETE FROM pr_state');
     this.db.run('DELETE FROM index_metadata');
+    this.db.run('DELETE FROM evidence_entries');
+    this.db.run('DELETE FROM search_history');
+    this.db.run('DELETE FROM pr_outcomes');
+    this.db.run('DELETE FROM decision_schemes');
+    this.db.run('DELETE FROM retrospectives');
     this.db.run('DELETE FROM evidence_entries');
     this.db.run('DELETE FROM search_history');
     this.db.run('DELETE FROM pr_outcomes');
@@ -817,6 +972,714 @@ export class LocalDB implements vscode.Disposable {
     countStmt.free();
 
     return result.count >= threshold;
+  }
+
+  /**
+   * Saves an evidence entry to the database.
+   *
+   * Evidence entries track structured data for PR reviews including test results,
+   * benchmarks, specifications, and risk assessments. This supports evidence-based
+   * review practices and helps teams maintain consistent documentation standards.
+   *
+   * @param evidence - The evidence entry to save (without id, timestamp auto-generated)
+   * @returns Promise resolving to the ID of the inserted entry
+   * @throws Error if database not initialized or validation fails
+   */
+  async saveEvidence(evidence: Omit<EvidenceEntry, 'id' | 'timestamp'>): Promise<number> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			INSERT INTO evidence_entries (
+				pr_reference,
+				tests_status,
+				tests_details,
+				benchmarks_status,
+				benchmarks_details,
+				spec_status,
+				spec_references,
+				risk_level,
+				identified_risks,
+				rollback_plan
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`);
+
+    stmt.bind([
+      evidence.pr_reference,
+      evidence.tests_status,
+      evidence.tests_details,
+      evidence.benchmarks_status,
+      evidence.benchmarks_details,
+      evidence.spec_status,
+      evidence.spec_references,
+      evidence.risk_level,
+      evidence.identified_risks,
+      evidence.rollback_plan,
+    ]);
+
+    stmt.step();
+    const lastInsertId = this.db.exec('SELECT last_insert_rowid() as id')[0].values[0][0] as number;
+    stmt.free();
+
+    await this.persistToFile();
+    return lastInsertId;
+  }
+
+  /**
+   * Retrieves all evidence entries for a specific PR.
+   *
+   * Used to display evidence history and track documentation completeness
+   * throughout the review lifecycle. Evidence entries are ordered by timestamp
+   * to show the progression of documentation.
+   *
+   * @param prReference - The PR identifier
+   * @returns Promise resolving to array of evidence entries
+   * @throws Error if database not initialized
+   */
+  async getEvidenceForPR(prReference: string): Promise<EvidenceEntry[]> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			SELECT * FROM evidence_entries
+			WHERE pr_reference = ?
+			ORDER BY timestamp DESC
+		`);
+
+    stmt.bind([prReference]);
+
+    const rows: EvidenceEntry[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as any;
+      rows.push({
+        id: row.id,
+        pr_reference: row.pr_reference,
+        timestamp: row.timestamp,
+        tests_status: row.tests_status,
+        tests_details: row.tests_details,
+        benchmarks_status: row.benchmarks_status,
+        benchmarks_details: row.benchmarks_details,
+        spec_status: row.spec_status,
+        spec_references: row.spec_references,
+        risk_level: row.risk_level,
+        identified_risks: row.identified_risks,
+        rollback_plan: row.rollback_plan,
+      });
+    }
+
+    stmt.free();
+    return rows;
+  }
+
+  /**
+   * Retrieves all evidence entries from the database.
+   *
+   * Used for analytics, reporting, and cross-PR evidence analysis.
+   * Returns all entries ordered by timestamp descending to show most recent first.
+   *
+   * @returns Promise resolving to array of all evidence entries
+   * @throws Error if database not initialized
+   */
+  async getAllEvidence(): Promise<EvidenceEntry[]> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			SELECT * FROM evidence_entries
+			ORDER BY timestamp DESC
+		`);
+
+    const rows: EvidenceEntry[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as any;
+      rows.push({
+        id: row.id,
+        pr_reference: row.pr_reference,
+        timestamp: row.timestamp,
+        tests_status: row.tests_status,
+        tests_details: row.tests_details,
+        benchmarks_status: row.benchmarks_status,
+        benchmarks_details: row.benchmarks_details,
+        spec_status: row.spec_status,
+        spec_references: row.spec_references,
+        risk_level: row.risk_level,
+        identified_risks: row.identified_risks,
+        rollback_plan: row.rollback_plan,
+      });
+    }
+
+    stmt.free();
+    return rows;
+  }
+
+  /**
+   * Adds a search query to the search history.
+   *
+   * Stores user search queries for quick re-execution and pattern analysis.
+   * Helps users navigate their workflow by tracking commonly searched terms.
+   *
+   * @param query - The search query string
+   * @param timestamp - Optional timestamp in ISO 8601 format (defaults to current time)
+   * @returns Promise resolving to the ID of the inserted entry
+   * @throws Error if database not initialized
+   */
+  async addSearchQuery(query: string, timestamp?: string): Promise<number> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    // use provided timestamp or generate current timestamp with millisecond precision
+    const ts = timestamp || new Date().toISOString();
+
+    const stmt = this.db.prepare(`
+			INSERT INTO search_history (query, timestamp)
+			VALUES (?, ?)
+		`);
+
+    stmt.bind([query, ts]);
+    stmt.step();
+    const lastInsertId = this.db.exec('SELECT last_insert_rowid() as id')[0].values[0][0] as number;
+    stmt.free();
+
+    await this.persistToFile();
+    return lastInsertId;
+  }
+
+  /**
+   * Retrieves recent search queries from history.
+   *
+   * Returns the most recent search queries ordered by timestamp descending.
+   * Used to populate the Recent Searches tree view section.
+   *
+   * @param limit - Maximum number of queries to return (default: 10)
+   * @returns Promise resolving to array of search history entries
+   * @throws Error if database not initialized
+   */
+  async getRecentSearches(limit: number = 10): Promise<SearchHistoryEntry[]> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			SELECT * FROM search_history
+			ORDER BY timestamp DESC
+			LIMIT ?
+		`);
+
+    stmt.bind([limit]);
+
+    const rows: SearchHistoryEntry[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as any;
+      rows.push({
+        id: row.id,
+        query: row.query,
+        timestamp: row.timestamp,
+      });
+    }
+
+    stmt.free();
+    return rows;
+  }
+
+  /**
+   * Marks ballots as posted to GitHub with comment URL and timestamp.
+   *
+   * Updates the pr_state table to record that ballot summary has been
+   * posted to GitHub PR as a comment. Used to prevent duplicate posts
+   * and track integration with GitHub workflow.
+   *
+   * @param prReference - The PR identifier
+   * @param commentUrl - GitHub comment HTML URL
+   * @returns Promise that resolves when metadata is stored
+   * @throws Error if database not initialized
+   */
+  async markBallotsPostedToGitHub(prReference: string, commentUrl: string): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			UPDATE pr_state
+			SET github_comment_url = ?,
+				github_posted_at = CURRENT_TIMESTAMP,
+				updated_at = CURRENT_TIMESTAMP
+			WHERE pr_reference = ?
+		`);
+
+    stmt.bind([commentUrl, prReference]);
+    stmt.step();
+    stmt.free();
+
+    await this.persistToFile();
+  }
+
+  /**
+   * Checks if ballots have already been posted to GitHub.
+   *
+   * Used to prevent duplicate ballot summary posts to the same PR.
+   * Returns true if a GitHub comment URL has been recorded for this PR.
+   *
+   * @param prReference - The PR identifier
+   * @returns Promise resolving to true if already posted
+   * @throws Error if database not initialized
+   */
+  async isPostedToGitHub(prReference: string): Promise<boolean> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			SELECT github_comment_url FROM pr_state
+			WHERE pr_reference = ?
+		`);
+
+    stmt.bind([prReference]);
+
+    let posted = false;
+    if (stmt.step()) {
+      const row = stmt.getAsObject() as { github_comment_url: string | null };
+      posted = row.github_comment_url !== null && row.github_comment_url !== '';
+    }
+
+    stmt.free();
+    return posted;
+  }
+
+  /**
+   * Records a PR outcome for calibration tracking.
+   *
+   * Stores outcome data including auto-detection status, user confirmation,
+   * and detection details. Used to track PR results and enable confidence
+   * calibration feedback over time.
+   *
+   * @param prId - The PR identifier
+   * @param outcomeType - Type of outcome (merged_clean, bug_found, reverted, followup_required)
+   * @param detectedAuto - Whether outcome was auto-detected
+   * @param detectionDetails - JSON object with detection information
+   * @returns Promise resolving to the ID of the inserted entry
+   * @throws Error if database not initialized
+   */
+  async recordOutcome(
+    prId: string,
+    outcomeType: 'merged_clean' | 'bug_found' | 'reverted' | 'followup_required',
+    detectedAuto: boolean,
+    detectionDetails?: Record<string, any>
+  ): Promise<number> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			INSERT INTO pr_outcomes (pr_id, outcome_type, detected_auto, user_confirmed, detection_details)
+			VALUES (?, ?, ?, ?, ?)
+		`);
+
+    const userConfirmed = !detectedAuto; // if not auto-detected, it's user-confirmed
+    const detailsJson = detectionDetails ? JSON.stringify(detectionDetails) : null;
+
+    stmt.bind([prId, outcomeType, detectedAuto ? 1 : 0, userConfirmed ? 1 : 0, detailsJson]);
+    stmt.step();
+    const lastInsertId = this.db.exec('SELECT last_insert_rowid() as id')[0].values[0][0] as number;
+    stmt.free();
+
+    await this.persistToFile();
+    return lastInsertId;
+  }
+
+  /**
+   * Gets all outcomes for a specific PR.
+   *
+   * Returns all outcome records for the given PR, ordered by timestamp descending.
+   * Used to display outcome history and track corrections/updates.
+   *
+   * @param prId - The PR identifier
+   * @returns Promise resolving to array of PR outcomes
+   * @throws Error if database not initialized
+   */
+  async getOutcomesForPR(prId: string): Promise<PROutcome[]> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			SELECT * FROM pr_outcomes
+			WHERE pr_id = ?
+			ORDER BY timestamp DESC
+		`);
+
+    stmt.bind([prId]);
+
+    const rows: PROutcome[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as any;
+      rows.push({
+        id: row.id,
+        pr_id: row.pr_id,
+        outcome_type: row.outcome_type,
+        detected_auto: Boolean(row.detected_auto),
+        user_confirmed: Boolean(row.user_confirmed),
+        detection_details: row.detection_details || '{}',
+        timestamp: row.timestamp,
+      });
+    }
+
+    stmt.free();
+    return rows;
+  }
+
+  /**
+   * Gets calibration data for the current user.
+   *
+   * Joins ballots with PR outcomes to calculate confidence vs accuracy metrics.
+   * Returns data points showing user's confidence level and whether their
+   * decision aligned with the actual outcome.
+   *
+   * Calibration logic:
+   * - Approve + merged_clean = success
+   * - Reject + (bug_found | reverted) = success
+   * - Neutral always counted as partial success (0.5)
+   * - Misalignments = failure
+   *
+   * @returns Promise resolving to array of calibration data points
+   * @throws Error if database not initialized
+   */
+  async getUserCalibrationData(): Promise<CalibrationDataPoint[]> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			SELECT
+				b.pr_reference,
+				b.confidence,
+				b.decision,
+				o.outcome_type
+			FROM ballots b
+			INNER JOIN pr_outcomes o ON b.pr_reference = o.pr_id
+			WHERE o.user_confirmed = 1
+			ORDER BY b.created_at DESC
+		`);
+
+    const rows: CalibrationDataPoint[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as any;
+
+      // calculate outcome success based on decision alignment
+      let outcomeSuccess = false;
+      if (row.decision === 'approve') {
+        outcomeSuccess = row.outcome_type === 'merged_clean';
+      } else if (row.decision === 'reject') {
+        outcomeSuccess = row.outcome_type === 'bug_found' || row.outcome_type === 'reverted';
+      } else {
+        // neutral is ambiguous - count as partial success
+        outcomeSuccess = true; // will be weighted differently in Brier score
+      }
+
+      rows.push({
+        pr_reference: row.pr_reference,
+        confidence: row.confidence,
+        decision: row.decision,
+        outcome_type: row.outcome_type,
+        outcome_success: outcomeSuccess,
+      });
+    }
+
+    stmt.free();
+    return rows;
+  }
+
+  /**
+   * Confirms or updates a PR outcome.
+   *
+   * Allows users to manually confirm auto-detected outcomes or override them.
+   * Updates the user_confirmed flag and optionally changes the outcome type.
+   *
+   * @param outcomeId - The outcome record ID
+   * @param confirmed - Whether the outcome is confirmed
+   * @param newOutcomeType - Optional new outcome type if overriding
+   * @returns Promise that resolves when update is complete
+   * @throws Error if database not initialized
+   */
+  async confirmOutcome(
+    outcomeId: number,
+    confirmed: boolean,
+    newOutcomeType?: 'merged_clean' | 'bug_found' | 'reverted' | 'followup_required'
+  ): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    let sql = `
+			UPDATE pr_outcomes
+			SET user_confirmed = ?
+		`;
+    const params: any[] = [confirmed ? 1 : 0];
+
+    if (newOutcomeType) {
+      sql += ', outcome_type = ?';
+      params.push(newOutcomeType);
+    }
+
+    sql += ' WHERE id = ?';
+    params.push(outcomeId);
+
+    const stmt = this.db.prepare(sql);
+    stmt.bind(params);
+    stmt.step();
+    stmt.free();
+
+    await this.persistToFile();
+  }
+
+  /**
+   * Records a decision scheme for a pr.
+   *
+   * Stores which social judgment scheme was used to make the final decision.
+   * This enables reflection on which decision rules work best for different contexts.
+   *
+   * @param prId - The PR identifier
+   * @param schemeType - The type of decision scheme used
+   * @param rationale - Explanation of why this scheme was chosen
+   * @param customName - Optional custom scheme name if type is 'custom'
+   * @returns Promise resolving to the ID of the inserted entry
+   * @throws Error if database not initialized
+   */
+  async recordDecisionScheme(
+    prId: string,
+    schemeType: string,
+    rationale: string,
+    customName?: string
+  ): Promise<number> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			INSERT INTO decision_schemes (pr_id, scheme_type, rationale, custom_scheme_name)
+			VALUES (?, ?, ?, ?)
+		`);
+
+    stmt.bind([prId, schemeType, rationale, customName || null]);
+    stmt.step();
+    const lastInsertId = this.db.exec('SELECT last_insert_rowid() as id')[0].values[0][0] as number;
+    stmt.free();
+
+    await this.persistToFile();
+    return lastInsertId;
+  }
+
+  /**
+   * Gets the decision scheme for a pr.
+   *
+   * Retrieves the recorded decision scheme if one exists.
+   *
+   * @param prId - The PR identifier
+   * @returns Promise resolving to the decision scheme entry or null
+   * @throws Error if database not initialized
+   */
+  async getDecisionScheme(prId: string): Promise<DecisionSchemeEntry | null> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			SELECT * FROM decision_schemes
+			WHERE pr_id = ?
+			ORDER BY timestamp DESC
+			LIMIT 1
+		`);
+
+    stmt.bind([prId]);
+
+    let entry: DecisionSchemeEntry | null = null;
+    if (stmt.step()) {
+      const row = stmt.getAsObject() as any;
+      entry = {
+        id: row.id,
+        pr_id: row.pr_id,
+        scheme_type: row.scheme_type,
+        rationale: row.rationale,
+        custom_scheme_name: row.custom_scheme_name,
+        timestamp: row.timestamp,
+      };
+    }
+
+    stmt.free();
+    return entry;
+  }
+
+  /**
+   * Records a retrospective for a pr.
+   *
+   * Stores post-mortem reflections on what went wrong and how to improve.
+   * Supports continuous learning and bias awareness.
+   *
+   * @param prId - The PR identifier
+   * @param triggerType - How the retrospective was triggered
+   * @param data - Retrospective data including what went wrong and improvements
+   * @returns Promise resolving to the ID of the inserted entry
+   * @throws Error if database not initialized
+   */
+  async recordRetrospective(
+    prId: string,
+    triggerType: string,
+    data: {
+      what_went_wrong: string;
+      what_to_improve: string;
+      bias_patterns: string[];
+    }
+  ): Promise<number> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+			INSERT INTO retrospectives (pr_id, trigger_type, what_went_wrong, what_to_improve, bias_patterns)
+			VALUES (?, ?, ?, ?, ?)
+		`);
+
+    stmt.bind([
+      prId,
+      triggerType,
+      data.what_went_wrong,
+      data.what_to_improve,
+      JSON.stringify(data.bias_patterns),
+    ]);
+    stmt.step();
+    const lastInsertId = this.db.exec('SELECT last_insert_rowid() as id')[0].values[0][0] as number;
+    stmt.free();
+
+    await this.persistToFile();
+    return lastInsertId;
+  }
+
+  /**
+   * Gets retrospectives with optional filters.
+   *
+   * Retrieves retrospective entries filtered by date range, pr, or trigger type.
+   * Returns entries ordered by timestamp descending (most recent first).
+   *
+   * @param filters - Optional filters for date range, pr id, or trigger type
+   * @returns Promise resolving to array of retrospective entries
+   * @throws Error if database not initialized
+   */
+  async getRetrospectives(filters?: RetrospectiveFilters): Promise<RetrospectiveEntry[]> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    let sql = 'SELECT * FROM retrospectives WHERE 1=1';
+    const params: any[] = [];
+
+    if (filters?.pr_id) {
+      sql += ' AND pr_id = ?';
+      params.push(filters.pr_id);
+    }
+
+    if (filters?.trigger_type) {
+      sql += ' AND trigger_type = ?';
+      params.push(filters.trigger_type);
+    }
+
+    if (filters?.start_date) {
+      sql += ' AND timestamp >= ?';
+      params.push(filters.start_date);
+    }
+
+    if (filters?.end_date) {
+      sql += ' AND timestamp <= ?';
+      params.push(filters.end_date);
+    }
+
+    sql += ' ORDER BY timestamp DESC';
+
+    const stmt = this.db.prepare(sql);
+    if (params.length > 0) {
+      stmt.bind(params);
+    }
+
+    const rows: RetrospectiveEntry[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as any;
+      rows.push({
+        id: row.id,
+        pr_id: row.pr_id,
+        trigger_type: row.trigger_type,
+        what_went_wrong: row.what_went_wrong,
+        what_to_improve: row.what_to_improve,
+        bias_patterns: row.bias_patterns,
+        timestamp: row.timestamp,
+      });
+    }
+
+    stmt.free();
+    return rows;
+  }
+
+  /**
+   * Gets reflection analytics aggregated from historical data.
+   *
+   * Analyzes decision schemes, retrospectives, and outcomes to generate
+   * team-level insights about decision patterns and potential biases.
+   *
+   * @returns Promise resolving to reflection analytics
+   * @throws Error if database not initialized
+   */
+  async getReflectionAnalytics(): Promise<ReflectionAnalytics> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    // get scheme distribution
+    const schemeStmt = this.db.prepare(`
+			SELECT scheme_type, COUNT(*) as count
+			FROM decision_schemes
+			GROUP BY scheme_type
+		`);
+
+    const schemeDistribution: Record<string, number> = {};
+    while (schemeStmt.step()) {
+      const row = schemeStmt.getAsObject() as { scheme_type: string; count: number };
+      schemeDistribution[row.scheme_type] = row.count;
+    }
+    schemeStmt.free();
+
+    // get total retrospectives
+    const countStmt = this.db.prepare('SELECT COUNT(*) as count FROM retrospectives');
+    countStmt.step();
+    const countRow = countStmt.getAsObject() as { count: number };
+    const totalRetrospectives = countRow.count;
+    countStmt.free();
+
+    // get bias frequency
+    const biasStmt = this.db.prepare('SELECT bias_patterns FROM retrospectives');
+    const biasFrequency: Record<string, number> = {};
+
+    while (biasStmt.step()) {
+      const row = biasStmt.getAsObject() as { bias_patterns: string };
+      try {
+        const patterns = JSON.parse(row.bias_patterns);
+        if (Array.isArray(patterns)) {
+          patterns.forEach((pattern: string) => {
+            biasFrequency[pattern] = (biasFrequency[pattern] || 0) + 1;
+          });
+        }
+      } catch {
+        // skip invalid json
+      }
+    }
+    biasStmt.free();
+
+    return {
+      scheme_distribution: schemeDistribution as any,
+      total_retrospectives: totalRetrospectives,
+      bias_frequency: biasFrequency as any,
+      insights: [], // insights will be generated by ReflectionService
+    };
   }
 
   /**

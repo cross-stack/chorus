@@ -191,6 +191,92 @@ describe('LocalDB', () => {
       expect(rationales).toContain('First ballot');
       expect(rationales).toContain('Second ballot');
     });
+
+    describe('nudge responses', () => {
+      it('should store and retrieve nudge_responses', async () => {
+        const nudgeResponses = {
+          consideredAlternatives: true,
+          mainRisk: 'Performance degradation in high-load scenarios',
+          dissentingViews: 'Alternative caching strategy might be better',
+        };
+
+        const ballotWithNudges = {
+          ...mockBallot,
+          nudge_responses: JSON.stringify(nudgeResponses),
+        };
+
+        const id = await db.addBallot(ballotWithNudges);
+        expect(id).toBeGreaterThan(0);
+
+        const ballots = await db.getBallotsByPR('#123');
+        expect(ballots).toHaveLength(1);
+        expect(ballots[0].nudge_responses).toBeDefined();
+
+        const retrieved = JSON.parse(ballots[0].nudge_responses || '{}');
+        expect(retrieved.consideredAlternatives).toBe(true);
+        expect(retrieved.mainRisk).toBe('Performance degradation in high-load scenarios');
+        expect(retrieved.dissentingViews).toBe('Alternative caching strategy might be better');
+      });
+
+      it('should handle ballots without nudge_responses', async () => {
+        const ballotWithoutNudges = {
+          ...mockBallot,
+          nudge_responses: undefined,
+        };
+
+        const id = await db.addBallot(ballotWithoutNudges);
+        expect(id).toBeGreaterThan(0);
+
+        const ballots = await db.getBallotsByPR('#123');
+        expect(ballots).toHaveLength(1);
+        // should default to empty JSON object
+        expect(ballots[0].nudge_responses).toBeDefined();
+      });
+
+      it('should handle partial nudge_responses', async () => {
+        const partialNudges = {
+          consideredAlternatives: false,
+          mainRisk: 'Breaking changes in API',
+          // dissentingViews omitted
+        };
+
+        const ballotWithPartialNudges = {
+          ...mockBallot,
+          nudge_responses: JSON.stringify(partialNudges),
+        };
+
+        const id = await db.addBallot(ballotWithPartialNudges);
+        expect(id).toBeGreaterThan(0);
+
+        const ballots = await db.getBallotsByPR('#123');
+        const retrieved = JSON.parse(ballots[0].nudge_responses || '{}');
+        expect(retrieved.consideredAlternatives).toBe(false);
+        expect(retrieved.mainRisk).toBe('Breaking changes in API');
+        expect(retrieved.dissentingViews).toBeUndefined();
+      });
+
+      it('should preserve nudge_responses after ballot reveal', async () => {
+        const nudgeResponses = {
+          consideredAlternatives: true,
+          mainRisk: 'Security vulnerability risk',
+        };
+
+        const ballotWithNudges = {
+          ...mockBallot,
+          nudge_responses: JSON.stringify(nudgeResponses),
+        };
+
+        await db.addBallot(ballotWithNudges);
+        await db.revealBallots('#123');
+
+        const ballots = await db.getBallotsByPR('#123');
+        expect(ballots[0].revealed).toBe(true);
+
+        const retrieved = JSON.parse(ballots[0].nudge_responses || '{}');
+        expect(retrieved.consideredAlternatives).toBe(true);
+        expect(retrieved.mainRisk).toBe('Security vulnerability risk');
+      });
+    });
   });
 
   describe('data management', () => {

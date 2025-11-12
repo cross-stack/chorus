@@ -368,6 +368,88 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     );
 
+    // register tag pr outcome command
+    console.log('Registering chorus.tagPROutcome command...');
+    const tagPROutcomeCommand = vscode.commands.registerCommand(
+      'chorus.tagPROutcome',
+      async () => {
+        try {
+          // step 1: get PR reference
+          const prRef = await vscode.window.showInputBox({
+            prompt: 'Enter PR Reference',
+            placeHolder: '#123 or https://github.com/...',
+          });
+
+          if (!prRef) {
+            return;
+          }
+
+          // step 2: select outcome type
+          const outcomeChoice = await vscode.window.showQuickPick(
+            [
+              {
+                label: 'Merged Clean',
+                description: 'PR merged successfully with no issues',
+                value: 'merged_clean',
+              },
+              {
+                label: 'Bug Found',
+                description: 'Issues discovered after merge requiring fixes',
+                value: 'bug_found',
+              },
+              {
+                label: 'Reverted',
+                description: 'PR was rolled back due to problems',
+                value: 'reverted',
+              },
+              {
+                label: 'Follow-up Required',
+                description: 'Additional work needed post-merge',
+                value: 'followup_required',
+              },
+            ],
+            { placeHolder: 'What Was the Outcome?' }
+          );
+
+          if (!outcomeChoice) {
+            return;
+          }
+
+          const outcomeType = outcomeChoice.value as
+            | 'merged_clean'
+            | 'bug_found'
+            | 'reverted'
+            | 'followup_required';
+
+          // step 3: get optional notes
+          const notes = await vscode.window.showInputBox({
+            prompt: 'Any Additional Notes? (Optional)',
+            placeHolder: 'e.g., hotfix deployed on day 3, performance issue detected...',
+          });
+
+          // record outcome in database
+          const detectionDetails = {
+            source: 'manual',
+            notes: notes || '',
+            timestamp: new Date().toISOString(),
+          };
+
+          await db.recordOutcome(prRef, outcomeType, false, detectionDetails);
+
+          vscode.window.showInformationMessage(`Outcome Tagged: ${outcomeChoice.label} for ${prRef}`);
+
+          // refresh calibration data if panel is open
+          if (ChorusPanel.currentPanel) {
+            // panel will refresh on next view
+          }
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to Tag Outcome: ${error instanceof Error ? error.message : 'Unknown Error'}`
+          );
+        }
+      }
+    );
+
     // register focus context view command
     console.log('Registering chorus.focusContextView command...');
     const focusContextViewCommand = vscode.commands.registerCommand(
@@ -475,6 +557,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       viewContextItemCommand,
       viewPRBallotsCommand,
       quickSubmitBallotCommand,
+      tagPROutcomeCommand,
       focusContextViewCommand,
       configureGitHubTokenCommand,
       showWelcomeCommand,
