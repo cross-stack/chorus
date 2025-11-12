@@ -450,6 +450,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     );
 
+    // register record decision scheme command
+    console.log('Registering chorus.recordDecisionScheme command...');
+    const recordDecisionSchemeCommand = vscode.commands.registerCommand(
+      'chorus.recordDecisionScheme',
+      async () => {
+        // open panel and trigger modal
+        vscode.commands.executeCommand('chorus.showPanel');
+      }
+    );
+
+    // register open retrospective prompt command
+    console.log('Registering chorus.openRetrospectivePrompt command...');
+    const openRetrospectivePromptCommand = vscode.commands.registerCommand(
+      'chorus.openRetrospectivePrompt',
+      async () => {
+        // open panel and trigger modal
+        vscode.commands.executeCommand('chorus.showPanel');
+      }
+    );
+
+    // register export retrospectives command
+    console.log('Registering chorus.exportRetrospectives command...');
+    const exportRetrospectivesCommand = vscode.commands.registerCommand(
+      'chorus.exportRetrospectives',
+      async () => {
+        vscode.commands.executeCommand('chorus.showPanel');
+      }
+    );
+
     // register focus context view command
     console.log('Registering chorus.focusContextView command...');
     const focusContextViewCommand = vscode.commands.registerCommand(
@@ -558,6 +587,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       viewPRBallotsCommand,
       quickSubmitBallotCommand,
       tagPROutcomeCommand,
+      recordDecisionSchemeCommand,
+      openRetrospectivePromptCommand,
+      exportRetrospectivesCommand,
       focusContextViewCommand,
       configureGitHubTokenCommand,
       showWelcomeCommand,

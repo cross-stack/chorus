@@ -394,6 +394,26 @@
             case 'calibrationData':
                 renderCalibrationData(message.data);
                 break;
+            case 'reflectionTimeline':
+                renderReflectionTimeline(message.timeline);
+                break;
+            case 'patternInsights':
+                renderPatternInsights(message.insights);
+                break;
+            case 'decisionSchemeSaved':
+                showSuccess('Decision Scheme Saved Successfully');
+                const schemeModal = document.getElementById('decision-scheme-modal');
+                if (schemeModal) {
+                    schemeModal.style.display = 'none';
+                }
+                break;
+            case 'retrospectiveSaved':
+                showSuccess('Retrospective Saved Successfully');
+                const retroModal = document.getElementById('retrospective-modal');
+                if (retroModal) {
+                    retroModal.style.display = 'none';
+                }
+                break;
             case 'error':
                 showError(message.message);
                 break;
@@ -634,6 +654,169 @@
         return labels[type] || type;
     }
 
+    // reflection tab functionality
+    function initReflectionTab() {
+        const filterButton = document.getElementById('filter-timeline');
+        const clearButton = document.getElementById('clear-filters');
+        const analyzePatternsButton = document.getElementById('analyze-patterns');
+        const exportReportButton = document.getElementById('export-report');
+
+        if (filterButton) {
+            filterButton.addEventListener('click', () => {
+                const startDate = document.getElementById('reflection-date-start').value;
+                const endDate = document.getElementById('reflection-date-end').value;
+                vscode.postMessage({
+                    command: 'getReflectionTimeline',
+                    filters: { start_date: startDate, end_date: endDate }
+                });
+            });
+        }
+
+        if (clearButton) {
+            clearButton.addEventListener('click', () => {
+                document.getElementById('reflection-date-start').value = '';
+                document.getElementById('reflection-date-end').value = '';
+                vscode.postMessage({
+                    command: 'getReflectionTimeline',
+                    filters: {}
+                });
+            });
+        }
+
+        if (analyzePatternsButton) {
+            analyzePatternsButton.addEventListener('click', () => {
+                vscode.postMessage({ command: 'analyzePatterns' });
+            });
+        }
+
+        if (exportReportButton) {
+            exportReportButton.addEventListener('click', () => {
+                vscode.postMessage({ command: 'exportReport' });
+            });
+        }
+
+        // decision scheme modal handlers
+        const schemeSelect = document.getElementById('scheme-type');
+        const customGroup = document.getElementById('custom-scheme-group');
+
+        if (schemeSelect && customGroup) {
+            schemeSelect.addEventListener('change', () => {
+                customGroup.style.display = schemeSelect.value === 'custom' ? 'block' : 'none';
+            });
+        }
+
+        const schemeForm = document.getElementById('decision-scheme-form');
+        if (schemeForm) {
+            schemeForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const formData = {
+                    scheme_type: document.getElementById('scheme-type').value,
+                    rationale: document.getElementById('scheme-rationale').value,
+                    custom_scheme_name: document.getElementById('custom-scheme-name').value
+                };
+                vscode.postMessage({ command: 'saveDecisionScheme', data: formData });
+            });
+        }
+
+        const schemeCancelButton = document.getElementById('scheme-cancel');
+        if (schemeCancelButton) {
+            schemeCancelButton.addEventListener('click', () => {
+                const modal = document.getElementById('decision-scheme-modal');
+                if (modal) {
+                    modal.style.display = 'none';
+                }
+            });
+        }
+
+        // retrospective modal handlers
+        const retroForm = document.getElementById('retrospective-form');
+        if (retroForm) {
+            retroForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const biases = Array.from(document.querySelectorAll('input[name="bias"]:checked'))
+                    .map(cb => cb.value);
+
+                const formData = {
+                    what_went_wrong: document.getElementById('retro-what-wrong').value,
+                    what_to_improve: document.getElementById('retro-what-improve').value,
+                    bias_patterns: biases
+                };
+                vscode.postMessage({ command: 'saveRetrospective', data: formData });
+            });
+        }
+
+        const retroDismissButton = document.getElementById('retro-dismiss');
+        if (retroDismissButton) {
+            retroDismissButton.addEventListener('click', () => {
+                const modal = document.getElementById('retrospective-modal');
+                if (modal) {
+                    modal.style.display = 'none';
+                }
+            });
+        }
+
+        // other bias checkbox handler
+        const otherBiasCheckbox = document.querySelector('input[name="bias"][value="other"]');
+        const otherBiasGroup = document.getElementById('other-bias-group');
+        if (otherBiasCheckbox && otherBiasGroup) {
+            otherBiasCheckbox.addEventListener('change', () => {
+                otherBiasGroup.style.display = otherBiasCheckbox.checked ? 'block' : 'none';
+            });
+        }
+
+        // load initial data
+        vscode.postMessage({ command: 'getReflectionTimeline', filters: {} });
+    }
+
+    /**
+     * renders reflection timeline data
+     * @param {Array} timeline - timeline entries
+     */
+    function renderReflectionTimeline(timeline) {
+        const container = document.getElementById('decision-timeline');
+        if (!container) return;
+
+        if (!timeline || timeline.length === 0) {
+            container.innerHTML = '<p class="placeholder-text">No decisions recorded yet</p>';
+            return;
+        }
+
+        let html = '<table><thead><tr><th>PR</th><th>Date</th><th>Scheme</th><th>Outcome</th></tr></thead><tbody>';
+        timeline.forEach(item => {
+            const date = new Date(item.timestamp).toLocaleDateString();
+            const schemeType = item.scheme?.scheme_type || 'N/A';
+            html += `<tr>
+                <td>${escapeHtml(item.pr_id)}</td>
+                <td>${date}</td>
+                <td>${escapeHtml(schemeType)}</td>
+                <td>${escapeHtml(item.trigger_type)}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    /**
+     * renders pattern insights
+     * @param {Array} insights - pattern analysis results
+     */
+    function renderPatternInsights(insights) {
+        const container = document.getElementById('pattern-insights');
+        if (!container) return;
+
+        if (!insights || insights.length === 0) {
+            container.innerHTML = '<p class="placeholder-text">No patterns detected</p>';
+            return;
+        }
+
+        let html = '<ul>';
+        insights.forEach(insight => {
+            html += `<li><strong>${escapeHtml(insight.pattern)}</strong>: ${escapeHtml(insight.description)} (Evidence: ${escapeHtml(insight.evidence)})</li>`;
+        });
+        html += '</ul>';
+        container.innerHTML = html;
+    }
+
     // initialize when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
@@ -642,6 +825,7 @@
             initEvidenceTab();
             initEquityTab();
             initCalibrationTab();
+            initReflectionTab();
         });
     } else {
         initTabs();
@@ -649,5 +833,6 @@
         initEvidenceTab();
         initEquityTab();
         initCalibrationTab();
+        initReflectionTab();
     }
 })();
