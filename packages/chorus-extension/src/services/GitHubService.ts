@@ -504,22 +504,40 @@ export class GitHubService {
       });
 
       let stdout = '';
+      let resolved = false;
+
+      // timeout after 5 seconds to prevent hangs
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          gitProcess.kill();
+          resolve(null);
+        }
+      }, 5000);
 
       gitProcess.stdout.on('data', (data) => {
         stdout += data.toString();
       });
 
       gitProcess.on('close', (code) => {
-        if (code !== 0) {
-          resolve(null);
-          return;
-        }
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          if (code !== 0) {
+            resolve(null);
+            return;
+          }
 
-        resolve(stdout.trim());
+          resolve(stdout.trim());
+        }
       });
 
       gitProcess.on('error', () => {
-        resolve(null);
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          resolve(null);
+        }
       });
     });
   }

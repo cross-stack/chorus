@@ -170,10 +170,13 @@ export function generateInsights(data: CalibrationDataPoint[]): string[] {
   // high confidence analysis
   const highConfidence = curve.filter((p) => p.confidence >= 4);
   if (highConfidence.length > 0) {
-    const avgHighAccuracy = highConfidence.reduce((sum, p) => sum + p.actualAccuracy * p.count, 0) / highConfidence.reduce((sum, p) => sum + p.count, 0);
+    const totalHighCount = highConfidence.reduce((sum, p) => sum + p.count, 0);
+    if (totalHighCount > 0) {
+      const avgHighAccuracy = highConfidence.reduce((sum, p) => sum + p.actualAccuracy * p.count, 0) / totalHighCount;
 
-    if (avgHighAccuracy < 0.7) {
-      insights.push('Consider requesting pairing or additional review when confidence is below 4. High-confidence predictions should have >70% accuracy.');
+      if (avgHighAccuracy < 0.7) {
+        insights.push('Consider requesting pairing or additional review when confidence is below 4. High-confidence predictions should have >70% accuracy.');
+      }
     }
   }
 

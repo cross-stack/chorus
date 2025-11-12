@@ -200,8 +200,9 @@ export class ChorusPanel {
       }
 
       // validate nudge responses if confidence is low
-      if (ballot.confidence < 3 && ballot.nudge_responses) {
-        if (!ballot.nudge_responses.mainRisk || !ballot.nudge_responses.mainRisk.trim()) {
+      // when confidence < 3, nudge_responses with mainRisk is required
+      if (ballot.confidence < 3) {
+        if (!ballot.nudge_responses?.mainRisk?.trim()) {
           await this.panel.webview.postMessage({
             command: 'error',
             message: 'Main Risk is Required When Confidence is Below 3',

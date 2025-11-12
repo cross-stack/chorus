@@ -1233,8 +1233,9 @@ export class LocalDB implements vscode.Disposable {
       } else if (row.decision === 'reject') {
         outcomeSuccess = row.outcome_type === 'bug_found' || row.outcome_type === 'reverted';
       } else {
-        // neutral is ambiguous - count as partial success
-        outcomeSuccess = true; // will be weighted differently in Brier score
+        // neutral decisions are ambiguous and should not be included in calibration
+        // neutral represents abstention, not a prediction that can be validated
+        continue;
       }
 
       rows.push({

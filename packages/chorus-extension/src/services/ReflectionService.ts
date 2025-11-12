@@ -375,8 +375,9 @@ export class ReflectionService {
 
     // scheme distribution
     report += '## Decision Scheme Distribution\n\n';
+    const totalSchemes = Object.values(analytics.scheme_distribution).reduce((sum, count) => sum + count, 0);
     for (const [scheme, count] of Object.entries(analytics.scheme_distribution)) {
-      const percentage = (count / retrospectives.length) * 100;
+      const percentage = totalSchemes > 0 ? (count / totalSchemes) * 100 : 0;
       report += `- **${scheme}**: ${count} (${percentage.toFixed(1)}%)\n`;
     }
     report += '\n';

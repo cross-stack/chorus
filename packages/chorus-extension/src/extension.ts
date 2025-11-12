@@ -670,6 +670,14 @@ function parseEvidenceData(
     }
   }
 
+  // check for benchmark data in raw text separately
+  if (benchmarksStatus === 'n/a' && rawText.trim()) {
+    if (rawText.match(/benchmark|performance|latency|throughput|ops\/sec/i)) {
+      benchmarksStatus = 'complete';
+      benchmarksDetails = rawText.trim();
+    }
+  }
+
   return {
     pr_reference: prRef,
     tests_status: testsStatus,
