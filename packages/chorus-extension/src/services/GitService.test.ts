@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { simpleGitLog, getCurrentBranch, GitLogEntry } from './GitService';
+import {
+  simpleGitLog,
+  getCurrentBranch,
+  GitLogEntry,
+  detectRevertCommits,
+  detectBugFixCommits,
+} from './GitService';
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 
@@ -323,6 +329,149 @@ src/file3.ts`;
 
       const result = await promise;
       expect(result).toHaveLength(1);
+    });
+  });
+
+  describe('security: input validation', () => {
+    describe('detectRevertCommits', () => {
+      it('should accept valid ISO date for sinceDate', async () => {
+        const mockOutput = 'abc123|2023-01-15 10:00:00|Revert PR #123';
+        const promise = detectRevertCommits('/test/workspace', '#123', '2023-01-01T00:00:00Z');
+
+        setTimeout(() => {
+          mockProcess.stdout.emit('data', mockOutput);
+          mockProcess.emit('close', 0);
+        }, 0);
+
+        const result = await promise;
+        expect(result).not.toBeNull();
+      });
+
+      it('should reject invalid date format', async () => {
+        await expect(
+          detectRevertCommits('/test/workspace', '#123', 'invalid-date')
+        ).rejects.toThrow('Invalid sinceDate');
+      });
+
+      it('should reject injection attempt in date', async () => {
+        await expect(
+          detectRevertCommits('/test/workspace', '#123', '2023-01-15; rm -rf /')
+        ).rejects.toThrow('Invalid sinceDate');
+      });
+
+      it('should reject injection attempt in PR reference', async () => {
+        const promise = detectRevertCommits('/test/workspace', '#123; whoami', '2023-01-01');
+
+        setTimeout(() => {
+          mockProcess.stdout.emit('data', '');
+          mockProcess.emit('close', 0);
+        }, 0);
+
+        const result = await promise;
+        expect(result).toBeNull(); // Invalid PR reference returns null
+      });
+
+      it('should work without sinceDate parameter', async () => {
+        const mockOutput = '';
+        const promise = detectRevertCommits('/test/workspace', '#123');
+
+        setTimeout(() => {
+          mockProcess.stdout.emit('data', mockOutput);
+          mockProcess.emit('close', 0);
+        }, 0);
+
+        const result = await promise;
+        expect(result).toBeNull(); // no matches
+      });
+
+      it('should sanitize PR reference formats', async () => {
+        const mockOutput = '';
+        const promise = detectRevertCommits('/test/workspace', 'owner/repo#456', '2023-01-01');
+
+        setTimeout(() => {
+          mockProcess.stdout.emit('data', mockOutput);
+          mockProcess.emit('close', 0);
+        }, 0);
+
+        const result = await promise;
+        // Should not throw, sanitization extracts just the number
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('detectBugFixCommits', () => {
+      it('should accept valid ISO date for mergeDate', async () => {
+        const mockOutput = '';
+        const promise = detectBugFixCommits(
+          '/test/workspace',
+          '#123',
+          '2023-01-15T10:00:00Z',
+          7
+        );
+
+        setTimeout(() => {
+          mockProcess.stdout.emit('data', mockOutput);
+          mockProcess.emit('close', 0);
+        }, 0);
+
+        const result = await promise;
+        expect(result).toBeNull(); // no matches
+      });
+
+      it('should reject invalid date format', async () => {
+        await expect(
+          detectBugFixCommits('/test/workspace', '#123', 'invalid-date', 7)
+        ).rejects.toThrow('Invalid mergeDate');
+      });
+
+      it('should reject injection attempt in date', async () => {
+        await expect(
+          detectBugFixCommits('/test/workspace', '#123', '2023-01-15`whoami`', 7)
+        ).rejects.toThrow('Invalid mergeDate');
+      });
+
+      it('should reject injection attempt in PR reference', async () => {
+        await expect(
+          detectBugFixCommits('/test/workspace', '#123$(id)', '2023-01-15T00:00:00Z', 7)
+        ).rejects.toThrow('Invalid PR reference');
+      });
+    });
+
+    describe('spawn usage', () => {
+      it('should always use spawn with array arguments (not string)', () => {
+        const promise = simpleGitLog('/test/workspace', 10);
+
+        setTimeout(() => {
+          mockProcess.stdout.emit('data', '');
+          mockProcess.emit('close', 0);
+        }, 0);
+
+        promise.then(() => {
+          // Verify spawn was called with array (second argument)
+          expect(mockSpawn).toHaveBeenCalledWith('git', expect.any(Array), expect.any(Object));
+
+          // Verify shell: false (should not have shell: true)
+          const callArgs = mockSpawn.mock.calls[0];
+          const options = callArgs[2];
+          expect(options.shell).not.toBe(true);
+        });
+      });
+
+      it('should never concatenate user input into command strings', async () => {
+        const promise = detectRevertCommits('/test/workspace', '#123', '2023-01-01');
+
+        setTimeout(() => {
+          mockProcess.stdout.emit('data', '');
+          mockProcess.emit('close', 0);
+        }, 0);
+
+        await promise;
+
+        // Verify the date is passed as part of an array element, not concatenated command
+        const callArgs = mockSpawn.mock.calls[mockSpawn.mock.calls.length - 1];
+        expect(callArgs[1]).toBeInstanceOf(Array);
+        expect(callArgs[1].some((arg: string) => arg.includes('--since='))).toBe(true);
+      });
     });
   });
 });

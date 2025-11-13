@@ -218,7 +218,8 @@ describe('ContextHoverProvider', () => {
           type: 'doc',
           title: 'Authentication Guide',
           path: 'docs/auth.md',
-          content: 'This is a guide about authentication in our system. It covers various topics...',
+          content:
+            'This is a guide about authentication in our system. It covers various topics...',
           metadata: {},
           indexed_at: '2023-01-01',
         },
