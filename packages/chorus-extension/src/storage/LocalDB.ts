@@ -10,14 +10,6 @@ import {
   ReflectionAnalytics,
 } from '../types/reflection';
 import { NudgeResponses } from '../types/ballot';
-import { EvidenceEntry } from '../types/evidence';
-import {
-  DecisionSchemeEntry,
-  RetrospectiveEntry,
-  RetrospectiveFilters,
-  ReflectionAnalytics,
-} from '../types/reflection';
-import { NudgeResponses } from '../types/ballot';
 
 export interface ContextEntry {
   id?: number;
@@ -37,7 +29,6 @@ export interface BallotEntry {
   rationale: string;
   author_metadata: string; // JSON string, revealed after submission
   nudge_responses?: string; // JSON string with elaboration nudge responses
-  nudge_responses?: string; // JSON string with elaboration nudge responses
   created_at: string;
   revealed: boolean;
 }
@@ -52,43 +43,9 @@ export interface PRState {
   first_pass_deadline?: string;
   github_comment_url?: string;
   github_posted_at?: string;
-  github_comment_url?: string;
-  github_posted_at?: string;
   created_at: string;
   updated_at: string;
 }
-
-export interface SearchHistoryEntry {
-  id?: number;
-  query: string;
-  timestamp: string;
-}
-
-/**
- * PR outcome tracking for calibration feedback
- */
-export interface PROutcome {
-  id?: number;
-  pr_id: string;
-  outcome_type: 'merged_clean' | 'bug_found' | 'reverted' | 'followup_required';
-  detected_auto: boolean;
-  user_confirmed: boolean;
-  detection_details: string; // JSON with detection info
-  timestamp: string;
-}
-
-/**
- * Calibration data point joining ballot with outcome
- */
-export interface CalibrationDataPoint {
-  pr_reference: string;
-  confidence: number; // 1-5
-  decision: 'approve' | 'reject' | 'neutral';
-  outcome_type: string;
-  outcome_success: boolean; // true if decision aligned with outcome
-}
-
-export { EvidenceEntry, DecisionSchemeEntry, RetrospectiveEntry, RetrospectiveFilters, ReflectionAnalytics, NudgeResponses };
 
 export interface SearchHistoryEntry {
   id?: number;
@@ -148,13 +105,11 @@ export class LocalDB implements vscode.Disposable {
 
       // try to load existing database file, or create new in-memory database
       let dbLoaded = false;
-      let dbLoaded = false;
       try {
         console.log(`LocalDB: Attempting to load database from file...`);
         const fileData = await fs.readFile(this.dbPath);
         this.db = new this.sql.Database(fileData);
         console.log(`LocalDB: Database loaded from file successfully`);
-        dbLoaded = true;
         dbLoaded = true;
       } catch (fileError) {
         // file doesn't exist or can't be read - create new in-memory database
@@ -165,34 +120,12 @@ export class LocalDB implements vscode.Disposable {
 
       console.log(`LocalDB: Creating tables...`);
       try {
-        try {
         await this.createTables();
-          console.log(`LocalDB: Tables created successfully`);
+        console.log(`LocalDB: Tables created successfully`);
       } catch (createError) {
         // if table creation fails on existing db, it's likely corrupted
         if (dbLoaded && createError instanceof Error &&
           createError.message.includes('malformed')) {
-          console.warn(`LocalDB: Database corrupted, recreating from scratch...`);
-
-          // backup corrupted db
-          try {
-            await fs.rename(this.dbPath, `${this.dbPath}.corrupted.${Date.now()}`);
-          } catch (backupError) {
-            console.error(`LocalDB: Failed to backup corrupted db:`, backupError);
-          }
-
-          // create fresh database
-          this.db = new this.sql.Database();
-          await this.createTables();
-          console.log(`LocalDB: Fresh database created successfully`);
-        } else {
-          throw createError;
-        }
-      }
-      } catch (createError) {
-        // if table creation fails on existing db, it's likely corrupted
-        if (dbLoaded && createError instanceof Error &&
-            createError.message.includes('malformed')) {
           console.warn(`LocalDB: Database corrupted, recreating from scratch...`);
 
           // backup corrupted db
@@ -271,30 +204,10 @@ export class LocalDB implements vscode.Disposable {
 				rationale TEXT NOT NULL,
 				author_metadata TEXT NOT NULL DEFAULT '{}',
 				nudge_responses TEXT DEFAULT '{}',
-				nudge_responses TEXT DEFAULT '{}',
 				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 				revealed INTEGER NOT NULL DEFAULT 0
 			)
 		`);
-
-    // migrate existing ballots table to add nudge_responses column
-    // check if column exists first to avoid errors on repeated migrations
-    try {
-      const tableInfo = this.db.exec("PRAGMA table_info(ballots)");
-      const hasNudgeColumn = tableInfo.length > 0 &&
-        tableInfo[0].values.some((row: any[]) => row[1] === 'nudge_responses');
-
-      if (!hasNudgeColumn) {
-        this.db.run(`
-          ALTER TABLE ballots
-          ADD COLUMN nudge_responses TEXT DEFAULT '{}'
-        `);
-        console.log('LocalDB: Added nudge_responses column to ballots table');
-      }
-    } catch (error) {
-      // column might not exist yet, which is fine - it will be created with CREATE TABLE
-      console.log('LocalDB: nudge_responses column migration check skipped:', error);
-    }
 
     // migrate existing ballots table to add nudge_responses column
     // check if column exists first to avoid errors on repeated migrations
@@ -322,16 +235,12 @@ export class LocalDB implements vscode.Disposable {
     // ballot_threshold: minimum number of ballots required before reveal is allowed
     // github_comment_url: url of posted ballot summary comment on github pr
     // github_posted_at: timestamp when ballot summary was posted to github
-    // github_comment_url: url of posted ballot summary comment on github pr
-    // github_posted_at: timestamp when ballot summary was posted to github
     this.db.run(`
 			CREATE TABLE IF NOT EXISTS pr_state (
 				pr_reference TEXT PRIMARY KEY,
 				phase TEXT NOT NULL CHECK (phase IN ('blinded', 'revealed')),
 				ballot_threshold INTEGER NOT NULL DEFAULT 3,
 				first_pass_deadline DATETIME,
-				github_comment_url TEXT,
-				github_posted_at DATETIME,
 				github_comment_url TEXT,
 				github_posted_at DATETIME,
 				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -430,98 +339,11 @@ export class LocalDB implements vscode.Disposable {
 			)
 		`);
 
-    // evidence_entries table - tracks evidence blocks for PRs
-    // stores structured evidence data for tests, benchmarks, specs, and risk assessments
-    // supports validation and tracking of evidence completeness across PR lifecycle
-    this.db.run(`
-			CREATE TABLE IF NOT EXISTS evidence_entries (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				pr_reference TEXT NOT NULL,
-				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-				tests_status TEXT NOT NULL CHECK (tests_status IN ('complete', 'in_progress', 'n/a')),
-				tests_details TEXT NOT NULL DEFAULT '',
-				benchmarks_status TEXT NOT NULL CHECK (benchmarks_status IN ('complete', 'in_progress', 'n/a')),
-				benchmarks_details TEXT NOT NULL DEFAULT '',
-				spec_status TEXT NOT NULL CHECK (spec_status IN ('complete', 'in_progress', 'n/a')),
-				spec_references TEXT NOT NULL DEFAULT '',
-				risk_level TEXT NOT NULL CHECK (risk_level IN ('low', 'medium', 'high')),
-				identified_risks TEXT NOT NULL DEFAULT '',
-				rollback_plan TEXT NOT NULL DEFAULT ''
-			)
-		`);
-
-    // search_history table - tracks user search queries for context discovery
-    // stores search history to enable quick re-execution of previous searches
-    // supports search patterns analysis and helps users navigate their workflow
-    this.db.run(`
-			CREATE TABLE IF NOT EXISTS search_history (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				query TEXT NOT NULL,
-				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-			)
-		`);
-
-    // pr_outcomes table - tracks pr outcomes for calibration feedback
-    // stores detected and user-confirmed outcomes to enable confidence calibration
-    // outcome_type: merged_clean (no issues), bug_found (fix needed), reverted (rollback), followup_required (additional work)
-    // detected_auto: true if detected by automatic pattern matching
-    // user_confirmed: true if user manually confirmed or overrode the outcome
-    // detection_details: JSON object with commits, keywords, confidence score
-    this.db.run(`
-			CREATE TABLE IF NOT EXISTS pr_outcomes (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				pr_id TEXT NOT NULL,
-				outcome_type TEXT NOT NULL CHECK (outcome_type IN ('merged_clean', 'bug_found', 'reverted', 'followup_required')),
-				detected_auto INTEGER NOT NULL DEFAULT 0,
-				user_confirmed INTEGER NOT NULL DEFAULT 0,
-				detection_details TEXT,
-				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-				FOREIGN KEY (pr_id) REFERENCES pr_state(pr_reference)
-			)
-		`);
-
-    // decision_schemes table - tracks which social judgment scheme was used for each pr
-    // supports meta-decision tracking and reflection on decision-making patterns
-    // helps teams understand which decision rules work best for different contexts
-    this.db.run(`
-			CREATE TABLE IF NOT EXISTS decision_schemes (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				pr_id TEXT NOT NULL,
-				scheme_type TEXT NOT NULL CHECK (scheme_type IN ('consensus', 'truth_wins', 'majority', 'expert_veto', 'unanimous', 'custom')),
-				rationale TEXT NOT NULL,
-				custom_scheme_name TEXT,
-				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-				FOREIGN KEY (pr_id) REFERENCES pr_state(pr_reference)
-			)
-		`);
-
-    // retrospectives table - tracks post-mortem reflections on pr outcomes
-    // supports continuous improvement and bias awareness
-    // helps teams learn from mistakes and adjust review processes
-    this.db.run(`
-			CREATE TABLE IF NOT EXISTS retrospectives (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				pr_id TEXT NOT NULL,
-				trigger_type TEXT NOT NULL CHECK (trigger_type IN ('manual', 'auto_bug_found', 'auto_revert')),
-				what_went_wrong TEXT NOT NULL,
-				what_to_improve TEXT NOT NULL,
-				bias_patterns TEXT NOT NULL DEFAULT '[]',
-				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-				FOREIGN KEY (pr_id) REFERENCES pr_state(pr_reference)
-			)
-		`);
-
     // create indexes for better search performance
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_context_type ON context_entries(type)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_context_path ON context_entries(path)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_ballots_pr ON ballots(pr_reference)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_pr_state_phase ON pr_state(phase)`);
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_evidence_pr ON evidence_entries(pr_reference)`);
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_search_history_ts ON search_history(timestamp DESC)`);
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_pr_outcomes_pr ON pr_outcomes(pr_id)`);
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_decision_schemes_pr ON decision_schemes(pr_id)`);
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_retrospectives_pr ON retrospectives(pr_id)`);
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_retrospectives_ts ON retrospectives(timestamp DESC)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_evidence_pr ON evidence_entries(pr_reference)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_search_history_ts ON search_history(timestamp DESC)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_pr_outcomes_pr ON pr_outcomes(pr_id)`);
@@ -595,8 +417,6 @@ export class LocalDB implements vscode.Disposable {
     const stmt = this.db.prepare(`
 			INSERT INTO ballots (pr_reference, decision, confidence, rationale, author_metadata, nudge_responses, revealed)
 			VALUES (?, ?, ?, ?, ?, ?, ?)
-			INSERT INTO ballots (pr_reference, decision, confidence, rationale, author_metadata, nudge_responses, revealed)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
 		`);
 
     stmt.bind([
@@ -605,7 +425,6 @@ export class LocalDB implements vscode.Disposable {
       ballot.confidence,
       ballot.rationale,
       ballot.author_metadata,
-      ballot.nudge_responses || '{}',
       ballot.nudge_responses || '{}',
       ballot.revealed ? 1 : 0,
     ]);
@@ -699,11 +518,6 @@ export class LocalDB implements vscode.Disposable {
     this.db.run('DELETE FROM ballots');
     this.db.run('DELETE FROM pr_state');
     this.db.run('DELETE FROM index_metadata');
-    this.db.run('DELETE FROM evidence_entries');
-    this.db.run('DELETE FROM search_history');
-    this.db.run('DELETE FROM pr_outcomes');
-    this.db.run('DELETE FROM decision_schemes');
-    this.db.run('DELETE FROM retrospectives');
     this.db.run('DELETE FROM evidence_entries');
     this.db.run('DELETE FROM search_history');
     this.db.run('DELETE FROM pr_outcomes');
