@@ -136,8 +136,7 @@ export async function getCurrentBranch(workspacePath: string): Promise<string> {
     });
   });
 }
-
-/**
+**
  * Detection result for PR outcomes
  */
 export interface OutcomeDetection {

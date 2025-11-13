@@ -533,7 +533,6 @@ export class ChorusPanel {
 							<small id="dissent-help" class="equity-help-text">Capturing minority views strengthens decision quality</small>
 						</div>
 					</div>
-
 					<button type="submit">Submit Quiet Ballot</button>
 				</form>
 
@@ -741,7 +740,7 @@ export class ChorusPanel {
 </html>`;
   }
 
-  /**
+/**
    * Formats a ballot summary comment for GitHub PR posting.
    *
    * Generates a markdown-formatted summary of ballot results including:

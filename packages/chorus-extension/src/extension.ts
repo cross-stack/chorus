@@ -22,7 +22,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await db.initialize();
     console.log('Database initialized successfully');
 
-    // initialize github service
+        // initialize github service
     console.log('Creating GitHubService instance...');
     const githubService = new GitHubService(context);
     await githubService.loadToken();
@@ -107,7 +107,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     incrementalIndexer.indexIncrementally().catch((err) => {
       console.error('Failed to index workspace:', err);
       vscode.window.showWarningMessage(
-        'Chorus: Failed to Index Workspace - Click Status Bar to Retry'
+        'Chorus: Failed to Index Workspace. Click Status Bar to Retry'
       );
     });
 
@@ -546,7 +546,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await vscode.commands.executeCommand('chorus.contextView.focus');
       }
     );
-
     // register configure github token command
     console.log('Registering chorus.configureGitHubToken command...');
     const configureGitHubTokenCommand = vscode.commands.registerCommand(
