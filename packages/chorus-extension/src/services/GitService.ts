@@ -457,3 +457,52 @@ export async function detectCleanMerge(
     firstDetectedDate: mergeDate,
   };
 }
+
+/**
+ * Extracts PR number from branch name if it follows common naming conventions.
+ *
+ * Supports patterns like:
+ * - feature/123-description
+ * - bugfix/PR-456
+ * - hotfix/gh-789
+ * - PR123
+ * - pr-123
+ *
+ * @param branchName - Current git branch name
+ * @returns PR number if detected, null otherwise
+ */
+export function extractPRNumberFromBranch(branchName: string): string | null {
+  if (!branchName) {
+    return null;
+  }
+
+  // pattern 1: feature/123-description or bugfix/PR-123
+  const pattern1 = /(?:feature|bugfix|hotfix|fix)\/(?:PR-?)?(\d+)/i;
+  const match1 = branchName.match(pattern1);
+  if (match1) {
+    return match1[1];
+  }
+
+  // pattern 2: PR123 or pr-123 at start
+  const pattern2 = /^(?:PR|pr)-?(\d+)/;
+  const match2 = branchName.match(pattern2);
+  if (match2) {
+    return match2[1];
+  }
+
+  // pattern 3: gh-123 or GH-123
+  const pattern3 = /(?:gh|GH)-(\d+)/;
+  const match3 = branchName.match(pattern3);
+  if (match3) {
+    return match3[1];
+  }
+
+  // pattern 4: just numbers after slash
+  const pattern4 = /\/(\d{1,5})(?:-|$)/;
+  const match4 = branchName.match(pattern4);
+  if (match4) {
+    return match4[1];
+  }
+
+  return null;
+}

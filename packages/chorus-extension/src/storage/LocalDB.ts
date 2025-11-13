@@ -125,7 +125,7 @@ export class LocalDB implements vscode.Disposable {
       } catch (createError) {
         // if table creation fails on existing db, it's likely corrupted
         if (dbLoaded && createError instanceof Error &&
-            createError.message.includes('malformed')) {
+          createError.message.includes('malformed')) {
           console.warn(`LocalDB: Database corrupted, recreating from scratch...`);
 
           // backup corrupted db
@@ -830,6 +830,68 @@ export class LocalDB implements vscode.Disposable {
     countStmt.free();
 
     return result.count >= threshold;
+  }
+
+  /**
+   * Retrieves recent PRs that the user has reviewed.
+   *
+   * Returns PRs ordered by most recent activity (ballot submission or phase update).
+   * Includes PR reference, phase, ballot count, and last activity timestamp.
+   * Useful for quick PR switching and workflow continuity.
+   *
+   * @param limit - Maximum number of PRs to return (default: 10)
+   * @returns Promise resolving to array of recent PR summaries
+   */
+  async getRecentPRs(limit: number = 10): Promise<Array<{
+    prReference: string;
+    phase: string | null;
+    ballotCount: number;
+    lastActivity: string;
+  }>> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const stmt = this.db.prepare(`
+      SELECT
+        b.pr_reference,
+        p.phase,
+        COUNT(b.id) as ballot_count,
+        MAX(b.created_at, p.updated_at) as last_activity
+      FROM ballots b
+      LEFT JOIN pr_state p ON b.pr_reference = p.pr_reference
+      GROUP BY b.pr_reference
+      ORDER BY last_activity DESC
+      LIMIT ?
+    `);
+
+    stmt.bind([limit]);
+
+    const results: Array<{
+      prReference: string;
+      phase: string | null;
+      ballotCount: number;
+      lastActivity: string;
+    }> = [];
+
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as {
+        pr_reference: string;
+        phase: string | null;
+        ballot_count: number;
+        last_activity: string;
+      };
+
+      results.push({
+        prReference: row.pr_reference,
+        phase: row.phase,
+        ballotCount: row.ballot_count,
+        lastActivity: row.last_activity,
+      });
+    }
+
+    stmt.free();
+    return results;
   }
 
   /**

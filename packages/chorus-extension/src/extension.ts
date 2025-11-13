@@ -28,17 +28,75 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await githubService.loadToken();
     console.log('GitHubService initialized successfully');
 
-    // create status bar item for indexing progress
-    console.log('Creating status bar item...');
-    const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-    statusBarItem.command = 'chorus.showIndexStatus';
-    statusBarItem.text = '$(sync~spin) Chorus: Indexing...';
-    statusBarItem.tooltip = 'Indexing workspace for context discovery';
-    statusBarItem.show();
+    // create status bar item for PR context
+    console.log('Creating Chorus status bar item...');
+    const chorusStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    chorusStatusBarItem.command = 'chorus.showPanel';
+    chorusStatusBarItem.text = '$(organization) Chorus';
+    chorusStatusBarItem.tooltip = 'Open Chorus panel';
+    chorusStatusBarItem.show();
+
+    // create separate status bar item for indexing progress
+    console.log('Creating indexing status bar item...');
+    const indexStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+    indexStatusBarItem.command = 'chorus.showIndexStatus';
+    indexStatusBarItem.text = '$(sync~spin) Indexing...';
+    indexStatusBarItem.tooltip = 'Chorus is indexing workspace for context discovery';
+    indexStatusBarItem.hide(); // initially hidden, shown during indexing
+
+    // function to update status bar with PR context
+    async function updateStatusBarWithPRContext() {
+      try {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+          chorusStatusBarItem.text = '$(organization) Chorus';
+          chorusStatusBarItem.tooltip = 'Open Chorus panel';
+          return;
+        }
+
+        const workspacePath = workspaceFolders[0].uri.fsPath;
+        const { getCurrentBranch, extractPRNumberFromBranch } = await import('./services/GitService');
+
+        const branchName = await getCurrentBranch(workspacePath);
+        if (!branchName) {
+          chorusStatusBarItem.text = '$(organization) Chorus';
+          chorusStatusBarItem.tooltip = 'Open Chorus panel';
+          return;
+        }
+
+        const prNumber = extractPRNumberFromBranch(branchName);
+        if (prNumber) {
+          const prReference = `#${prNumber}`;
+          const phase = await db.getPRPhase(prReference);
+          const ballots = await db.getBallotsByPR(prReference);
+
+          if (phase === 'blinded') {
+            chorusStatusBarItem.text = `$(lock) Chorus: ${prReference} (${ballots.length} ballots)`;
+            chorusStatusBarItem.tooltip = `Reviewing ${prReference} - Blinded phase - Click to open panel`;
+          } else if (phase === 'revealed') {
+            chorusStatusBarItem.text = `$(eye) Chorus: ${prReference} (revealed)`;
+            chorusStatusBarItem.tooltip = `${prReference} ballots revealed - Click to open panel`;
+          } else {
+            chorusStatusBarItem.text = `$(organization) Chorus: ${prReference}`;
+            chorusStatusBarItem.tooltip = `Branch detected: ${branchName} - Click to start review`;
+          }
+        } else {
+          chorusStatusBarItem.text = `$(organization) Chorus`;
+          chorusStatusBarItem.tooltip = `Branch: ${branchName} - Click to open panel`;
+        }
+      } catch (error) {
+        console.error('Failed to update status bar:', error);
+        chorusStatusBarItem.text = '$(organization) Chorus';
+        chorusStatusBarItem.tooltip = 'Open Chorus panel';
+      }
+    }
+
+    // update status bar initially and when workspace changes
+    updateStatusBarWithPRContext().catch(console.error);
 
     // initialize incremental indexer
     console.log('Creating IncrementalIndexer instance...');
-    const incrementalIndexer = new IncrementalIndexer(db, statusBarItem);
+    const incrementalIndexer = new IncrementalIndexer(db, indexStatusBarItem);
 
     // start file watchers for incremental updates
     console.log('Starting file watchers...');
@@ -497,12 +555,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         try {
           const action = await vscode.window.showInformationMessage(
             'Configure GitHub Token for Chorus\n\n' +
-              'A GitHub personal access token enables:\n' +
-              '- Higher API rate limits (5000 vs 60 requests/hour)\n' +
-              '- Access to private repositories\n' +
-              '- Indexing PR descriptions and issue comments\n\n' +
-              'Required scopes: public_repo (or repo for private repos)\n\n' +
-              'Token is stored securely in VS Code secret storage.',
+            'A GitHub personal access token enables:\n' +
+            '- Higher API rate limits (5000 vs 60 requests/hour)\n' +
+            '- Access to private repositories\n' +
+            '- Indexing PR descriptions and issue comments\n\n' +
+            'Required scopes: public_repo (or repo for private repos)\n\n' +
+            'Token is stored securely in VS Code secret storage.',
             { modal: true },
             'Set Token',
             'Remove Token',
@@ -593,7 +651,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       focusContextViewCommand,
       configureGitHubTokenCommand,
       showWelcomeCommand,
-      statusBarItem,
+      chorusStatusBarItem,
+      indexStatusBarItem,
       incrementalIndexer,
       db
     );

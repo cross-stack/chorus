@@ -58,6 +58,12 @@ export class ChorusPanel {
     this.panel.webview.onDidReceiveMessage(
       async (message) => {
         switch (message.command) {
+          case 'autoDetectPR':
+            await this.handleAutoDetectPR();
+            return;
+          case 'getRecentPRs':
+            await this.handleGetRecentPRs();
+            return;
           case 'searchContext':
             await this.handleSearchContext(message.query);
             return;
@@ -96,6 +102,11 @@ export class ChorusPanel {
       null,
       this.disposables
     );
+
+    // auto-detect PR context when panel opens
+    this.handleAutoDetectPR().catch((error) => {
+      console.error('Failed to auto-detect PR:', error);
+    });
   }
 
   private async handleSearchContext(query: string): Promise<void> {
@@ -369,12 +380,17 @@ export class ChorusPanel {
       vscode.Uri.joinPath(this.extensionUri, 'media', 'panel.css')
     );
 
+    const stylesUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'styles.css')
+    );
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<link href="${styleUri}" rel="stylesheet">
+	<link href="${stylesUri}" rel="stylesheet">
 	<title>Chorus</title>
 </head>
 <body>
@@ -393,7 +409,14 @@ export class ChorusPanel {
 					<input type="text" id="context-search" placeholder="Search context..." aria-label="Search context">
 					<button id="search-button">Search</button>
 				</div>
-				<div id="context-results" class="results-section"></div>
+				<div id="context-results" class="results-section">
+					<div class="empty-state">
+						<div class="empty-state-icon">$(search)</div>
+						<h3>Search for Context</h3>
+						<p>Search for commits, documentation, or related PRs to inform your review</p>
+						<small class="empty-state-hint">Tip: Use keywords like "auth", "performance", or file names</small>
+					</div>
+				</div>
 			</div>
 
 			<div id="evidence-tab" class="tab-pane" role="tabpanel">
@@ -419,6 +442,24 @@ export class ChorusPanel {
 			</div>
 
 			<div id="equity-tab" class="tab-pane" role="tabpanel">
+				<!-- PR Auto-Detection Banner -->
+				<div id="pr-auto-detect-banner" class="info-banner" style="display: none;">
+					<span class="info-icon">$(info)</span>
+					<span id="pr-auto-detect-text"></span>
+					<button id="use-detected-pr" class="link-button">Use this PR</button>
+				</div>
+
+				<!-- Recent PRs Dropdown -->
+				<div class="form-group">
+					<label for="recent-prs-dropdown">
+						Recent PRs
+						<span class="info-tooltip" title="Quick access to your 10 most recent PRs">$(info)</span>
+					</label>
+					<select id="recent-prs-dropdown" class="recent-prs-select">
+						<option value="">Select a recent PR...</option>
+					</select>
+				</div>
+
 				<!-- Phase indicator section -->
 				<div id="phase-section" class="phase-section">
 					<p class="equity-help-text">Enter a PR Reference Below to Begin</p>
@@ -430,7 +471,10 @@ export class ChorusPanel {
 				<!-- Ballot submission form -->
 				<form id="ballot-form" class="ballot-form">
 					<div class="form-group">
-						<label for="pr-reference">PR Reference:</label>
+						<label for="pr-reference">
+							PR Reference
+							<span class="info-tooltip" title="Enter PR number (e.g., #123) or full GitHub URL">$(info)</span>
+						</label>
 						<input type="text" id="pr-reference" required placeholder="e.g., #123 or PR URL" aria-describedby="pr-help">
 						<small id="pr-help" class="equity-help-text">Enter PR number or URL to check review status</small>
 					</div>
@@ -444,14 +488,24 @@ export class ChorusPanel {
 						</select>
 					</div>
 					<div class="form-group">
-						<label for="confidence">Confidence (1-5):</label>
-						<input type="range" id="confidence" min="1" max="5" value="3" aria-valuemin="1" aria-valuemax="5" aria-valuenow="3">
-						<span id="confidence-value" aria-live="polite">3</span>
+						<label for="confidence">
+							Confidence (1-5)
+							<span class="info-tooltip" title="Rate 1-5 how certain you are. 1=Low confidence, 3=Medium, 5=High confidence">$(info)</span>
+						</label>
+						<div class="confidence-input-wrapper">
+							<input type="range" id="confidence" min="1" max="5" value="3" aria-valuemin="1" aria-valuemax="5" aria-valuenow="3">
+							<span id="confidence-value" aria-live="polite">3 - Medium</span>
+						</div>
+						<div id="confidence-hint" class="hint-message" style="display: none;"></div>
 					</div>
 					<div class="form-group">
-						<label for="rationale">Rationale:</label>
+						<label for="rationale">
+							Rationale
+							<span class="info-tooltip" title="Provide evidence-based reasoning for your decision">$(info)</span>
+						</label>
 						<textarea id="rationale" required placeholder="Brief explanation of your decision" aria-describedby="rationale-help"></textarea>
 						<small id="rationale-help" class="equity-help-text">Provide reasoning for your decision</small>
+						<div class="character-count" id="rationale-count">0 characters</div>
 					</div>
 
 					<!-- Elaboration Nudges (only shown during blinded phase) -->
@@ -1030,6 +1084,113 @@ ${nudgeSummary}
       await this.panel.webview.postMessage({
         command: 'error',
         message: 'Failed to Save Retrospective: ' + error,
+      });
+    }
+  }
+
+  /**
+   * Auto-detects PR context from current git branch.
+   *
+   * Workflow:
+   * 1. Get current branch name from workspace
+   * 2. Extract PR number from branch name (if matches common patterns)
+   * 3. Search local database for matching PR
+   * 4. Query GitHub API if PR not found locally
+   * 5. Send detected PR info to webview for auto-population
+   */
+  private async handleAutoDetectPR(): Promise<void> {
+    try {
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      if (!workspaceFolders || workspaceFolders.length === 0) {
+        return;
+      }
+
+      const workspacePath = workspaceFolders[0].uri.fsPath;
+
+      // get current branch
+      const { getCurrentBranch, extractPRNumberFromBranch } = await import('../services/GitService');
+      const branchName = await getCurrentBranch(workspacePath);
+
+      if (!branchName) {
+        return;
+      }
+
+      // extract PR number from branch name
+      const prNumber = extractPRNumberFromBranch(branchName);
+      if (!prNumber) {
+        // send branch info without PR match
+        await this.panel.webview.postMessage({
+          command: 'prAutoDetected',
+          data: {
+            branch: branchName,
+            prReference: null,
+            prTitle: null,
+          },
+        });
+        return;
+      }
+
+      // construct PR reference
+      const prReference = `#${prNumber}`;
+
+      // check if PR exists in database
+      const phase = await this.db.getPRPhase(prReference);
+      const ballots = await this.db.getBallotsByPR(prReference);
+
+      // try to get PR title from GitHub if service available
+      let prTitle: string | null = null;
+      if (this.githubService) {
+        try {
+          const githubRepo = await this.githubService.detectGitHubRepo(workspacePath);
+          if (githubRepo) {
+            const prData = await this.githubService.getPullRequest(
+              githubRepo.owner,
+              githubRepo.repo,
+              parseInt(prNumber, 10)
+            );
+            prTitle = prData?.title || null;
+          }
+        } catch (error) {
+          console.log('Could not fetch PR title from GitHub:', error);
+        }
+      }
+
+      // send detected PR info to webview
+      await this.panel.webview.postMessage({
+        command: 'prAutoDetected',
+        data: {
+          branch: branchName,
+          prReference,
+          prTitle,
+          existsInDB: phase !== null,
+          ballotCount: ballots.length,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to auto-detect PR:', error);
+      // silently fail - auto-detect is a convenience feature
+    }
+  }
+
+  /**
+   * Retrieves recent PRs that the user has reviewed.
+   *
+   * Returns up to 10 most recent PRs ordered by last activity.
+   * Includes PR reference, title (if available), ballot count, and last action time.
+   */
+  private async handleGetRecentPRs(): Promise<void> {
+    try {
+      const recentPRs = await this.db.getRecentPRs(10);
+
+      await this.panel.webview.postMessage({
+        command: 'recentPRs',
+        data: recentPRs,
+      });
+    } catch (error) {
+      console.error('Failed to get recent PRs:', error);
+      await this.panel.webview.postMessage({
+        command: 'error',
+        message: 'Failed to Load Recent PRs: ' + error,
       });
     }
   }

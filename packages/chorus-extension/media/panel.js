@@ -1,4 +1,4 @@
-(function() {
+(function () {
     const vscode = acquireVsCodeApi();
 
     // tab management
@@ -90,13 +90,105 @@
         const prReferenceInput = document.getElementById('pr-reference');
         const startReviewButton = document.getElementById('start-review-button');
         const revealButton = document.getElementById('reveal-button');
+        const rationaleTextarea = document.getElementById('rationale');
+        const rationaleCount = document.getElementById('rationale-count');
+        const confidenceHint = document.getElementById('confidence-hint');
 
         // track current pr reference for phase management
         let currentPRReference = '';
+        let detectedPRData = null;
+
+        // confidence slider with labels
+        const confidenceLabels = {
+            1: '1 - Very Low',
+            2: '2 - Low',
+            3: '3 - Medium',
+            4: '4 - High',
+            5: '5 - Very High'
+        };
 
         confidenceSlider.addEventListener('input', () => {
-            confidenceValue.textContent = confidenceSlider.value;
+            const value = confidenceSlider.value;
+            confidenceValue.textContent = confidenceLabels[value] || value;
+
+            // show smart hints based on confidence level
+            showConfidenceHint(parseInt(value));
         });
+
+        // character counter for rationale
+        if (rationaleTextarea && rationaleCount) {
+            rationaleTextarea.addEventListener('input', () => {
+                const length = rationaleTextarea.value.length;
+                rationaleCount.textContent = `${length} characters`;
+
+                // color coding based on length
+                if (length < 20) {
+                    rationaleCount.className = 'character-count warning';
+                } else if (length > 500) {
+                    rationaleCount.className = 'character-count warning';
+                } else {
+                    rationaleCount.className = 'character-count';
+                }
+            });
+        }
+
+        function showConfidenceHint(confidence) {
+            if (!confidenceHint) return;
+
+            let hint = '';
+            let className = 'hint-message';
+
+            if (confidence <= 2) {
+                hint = 'Low confidence detected. Make sure to fill in the main risk field below.';
+                className = 'hint-message warning';
+            } else if (confidence >= 4) {
+                hint = 'High confidence. Ensure your rationale includes strong evidence.';
+                className = 'hint-message info';
+            } else {
+                hint = '';
+            }
+
+            if (hint) {
+                confidenceHint.textContent = hint;
+                confidenceHint.className = className;
+                confidenceHint.style.display = 'block';
+            } else {
+                confidenceHint.style.display = 'none';
+            }
+        }
+
+        // auto-detect PR handling
+        const autoDetectBanner = document.getElementById('pr-auto-detect-banner');
+        const autoDetectText = document.getElementById('pr-auto-detect-text');
+        const useDetectedPRButton = document.getElementById('use-detected-pr');
+
+        if (useDetectedPRButton) {
+            useDetectedPRButton.addEventListener('click', () => {
+                if (detectedPRData && detectedPRData.prReference) {
+                    prReferenceInput.value = detectedPRData.prReference;
+                    prReferenceInput.dispatchEvent(new Event('blur'));
+                    if (autoDetectBanner) {
+                        autoDetectBanner.style.display = 'none';
+                    }
+                }
+            });
+        }
+
+        // recent PRs dropdown
+        const recentPRsDropdown = document.getElementById('recent-prs-dropdown');
+        if (recentPRsDropdown) {
+            recentPRsDropdown.addEventListener('change', (e) => {
+                const selectedPR = e.target.value;
+                if (selectedPR) {
+                    prReferenceInput.value = selectedPR;
+                    prReferenceInput.dispatchEvent(new Event('blur'));
+                }
+            });
+        }
+
+        // request auto-detection when tab loads
+        vscode.postMessage({ command: 'autoDetectPR' });
+        vscode.postMessage({ command: 'getRecentPRs' });
 
         // query phase when pr reference changes
         prReferenceInput.addEventListener('blur', () => {
@@ -348,11 +440,105 @@
         }
     }
 
+    /**
+     * handles auto-detected PR data from extension
+     * @param {Object} data - auto-detected PR information
+     */
+    function handlePRAutoDetected(data) {
+        const autoDetectBanner = document.getElementById('pr-auto-detect-banner');
+        const autoDetectText = document.getElementById('pr-auto-detect-text');
+
+        if (!autoDetectBanner || !autoDetectText) return;
+
+        if (data.prReference) {
+            let message = `Detected PR ${data.prReference} from branch "${data.branch}"`;
+            if (data.prTitle) {
+                message += `: ${data.prTitle}`;
+            }
+            if (data.existsInDB) {
+                message += ` (${data.ballotCount} ballot${data.ballotCount === 1 ? '' : 's'} submitted)`;
+            }
+
+            autoDetectText.textContent = message;
+            autoDetectBanner.style.display = 'flex';
+
+            // store for use button
+            window.detectedPRData = data;
+        } else if (data.branch) {
+            autoDetectText.textContent = `On branch "${data.branch}" - No PR detected`;
+            autoDetectBanner.style.display = 'flex';
+            // hide use button
+            const useButton = document.getElementById('use-detected-pr');
+            if (useButton) {
+                useButton.style.display = 'none';
+            }
+        }
+    }
+
+    /**
+     * populates recent PRs dropdown
+     * @param {Array} recentPRs - array of recent PR objects
+     */
+    function populateRecentPRsDropdown(recentPRs) {
+        const dropdown = document.getElementById('recent-prs-dropdown');
+        if (!dropdown) return;
+
+        // clear existing options except first one
+        dropdown.innerHTML = '<option value="">Select a recent PR...</option>';
+
+        if (!recentPRs || recentPRs.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No recent PRs';
+            option.disabled = true;
+            dropdown.appendChild(option);
+            return;
+        }
+
+        recentPRs.forEach(pr => {
+            const option = document.createElement('option');
+            option.value = pr.prReference;
+
+            let label = pr.prReference;
+            if (pr.phase) {
+                label += ` (${pr.phase})`;
+            }
+            label += ` - ${pr.ballotCount} ballot${pr.ballotCount === 1 ? '' : 's'}`;
+
+            // format relative time
+            const lastActivity = new Date(pr.lastActivity);
+            const now = new Date();
+            const diffMs = now - lastActivity;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+
+            let timeAgo = '';
+            if (diffMins < 60) {
+                timeAgo = `${diffMins}m ago`;
+            } else if (diffHours < 24) {
+                timeAgo = `${diffHours}h ago`;
+            } else {
+                timeAgo = `${diffDays}d ago`;
+            }
+
+            label += ` - ${timeAgo}`;
+            option.textContent = label;
+            dropdown.appendChild(option);
+        });
+    }
+
     // message handling from extension
     window.addEventListener('message', event => {
         const message = event.data;
 
         switch (message.command) {
+            case 'prAutoDetected':
+                handlePRAutoDetected(message.data);
+                break;
+            case 'recentPRs':
+                populateRecentPRsDropdown(message.data);
+                break;
             case 'searchResults':
                 displaySearchResults(message.results);
                 break;
@@ -509,7 +695,7 @@
 
         document.getElementById('overall-accuracy').textContent =
             data.overallAccuracy !== undefined ?
-            (Math.round(data.overallAccuracy * 100) + '%') : '--';
+                (Math.round(data.overallAccuracy * 100) + '%') : '--';
 
         // render calibration chart
         renderCalibrationChart(data.calibrationCurve || []);
