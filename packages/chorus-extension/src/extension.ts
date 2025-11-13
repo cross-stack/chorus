@@ -662,19 +662,16 @@ function parseEvidenceData(
   }
 
   // fallback to raw text if no structured data
-  if (testsStatus === 'n/a' && rawText.trim()) {
-    // check if raw text looks like test output
-    if (rawText.match(/test|pass|fail|coverage/i)) {
-      testsStatus = 'complete';
-      testsDetails = rawText.trim();
-    }
-  }
-
-  // check for benchmark data in raw text separately
-  if (benchmarksStatus === 'n/a' && rawText.trim()) {
+  if (testsStatus === 'n/a' && benchmarksStatus === 'n/a' && rawText.trim()) {
+    // check for benchmark data first (more specific pattern)
     if (rawText.match(/benchmark|performance|latency|throughput|ops\/sec/i)) {
       benchmarksStatus = 'complete';
       benchmarksDetails = rawText.trim();
+    }
+    // otherwise check if raw text looks like test output
+    else if (rawText.match(/test|pass|fail|coverage/i)) {
+      testsStatus = 'complete';
+      testsDetails = rawText.trim();
     }
   }
 

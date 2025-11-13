@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { validateOptionalISODate, sanitizePRReference, validateISODate } from '../utils/gitSecurity';
 
 export interface GitLogEntry {
   hash: string;
@@ -163,14 +164,24 @@ export async function detectRevertCommits(
   sinceDate?: string
 ): Promise<OutcomeDetection | null> {
   return new Promise((resolve, reject) => {
-    // extract pr number from reference
-    const prNumberMatch = prId.match(/#(\d+)/);
-    if (!prNumberMatch) {
-      resolve(null);
+    // Validate and sanitize inputs
+    // Even though spawn with array args is safe from shell injection,
+    // we validate to ensure data integrity and catch malformed inputs early
+    try {
+      validateOptionalISODate(sinceDate, 'sinceDate');
+    } catch (error) {
+      reject(error);
       return;
     }
 
-    const prNumber = prNumberMatch[1];
+    // extract pr number from reference
+    let prNumber: string;
+    try {
+      prNumber = sanitizePRReference(prId);
+    } catch (error) {
+      resolve(null); // Invalid PR reference, no results
+      return;
+    }
 
     // build git log command with date filter if provided
     const args = [
@@ -285,16 +296,20 @@ export async function detectBugFixCommits(
   daysAfter: number = 7
 ): Promise<OutcomeDetection | null> {
   return new Promise((resolve, reject) => {
-    const prNumberMatch = prId.match(/#(\d+)/);
-    if (!prNumberMatch) {
-      resolve(null);
+    // Validate and sanitize inputs
+    let validatedMergeDate: string;
+    let prNumber: string;
+
+    try {
+      validatedMergeDate = validateISODate(mergeDate, 'mergeDate');
+      prNumber = sanitizePRReference(prId);
+    } catch (error) {
+      reject(error);
       return;
     }
 
-    const prNumber = prNumberMatch[1];
-
     // calculate date range
-    const mergeDateTime = new Date(mergeDate);
+    const mergeDateTime = new Date(validatedMergeDate);
     const endDate = new Date(mergeDateTime.getTime() + daysAfter * 24 * 60 * 60 * 1000);
 
     const args = [
@@ -308,7 +323,7 @@ export async function detectBugFixCommits(
       '--grep=hotfix',
       '--regexp-ignore-case',
       '-i',
-      `--since=${mergeDate}`,
+      `--since=${validatedMergeDate}`,
       `--until=${endDate.toISOString()}`,
     ];
 
