@@ -1,6 +1,6 @@
 {
   "name": "chorus-extension",
-  "displayName": "Chorus - Evidence-first Code Review",
+  "displayName": "Chorus: Evidence-first Code Review",
   "description": "Evidence-first code review extension for VS Code/Positron",
   "version": "0.1.0",
   "engines": {
@@ -9,11 +9,6 @@
   },
   "categories": [
     "Other"
-  ],
-  "activationEvents": [
-    "onCommand:chorus.showPanel",
-    "onLanguage:typescript",
-    "onLanguage:javascript"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -98,11 +93,17 @@
         {
           "id": "chorus.contextView",
           "name": "Context Discovery",
-          "when": "chorus.enabled"
+          "when": "chorus.enabled",
+          "icon": "$(organization)"
         }
       ]
     },
     "keybindings": [
+      {
+        "command": "chorus.showPanel",
+        "key": "ctrl+shift+c",
+        "mac": "cmd+shift+c"
+      },
       {
         "command": "chorus.quickSubmitBallot",
         "key": "ctrl+shift+b",
@@ -120,7 +121,37 @@
         "key": "ctrl+shift+k",
         "mac": "cmd+shift+k"
       }
-    ]
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "chorus.addEvidence",
+          "when": "editorHasSelection",
+          "group": "chorus@1"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "chorus.showPanel",
+          "when": "view == chorus.contextView",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "chorus.showPanel",
+          "when": "chorus.enabled"
+        },
+        {
+          "command": "chorus.quickSubmitBallot",
+          "when": "chorus.enabled"
+        },
+        {
+          "command": "chorus.addEvidence",
+          "when": "chorus.enabled"
+        }
+      ]
+    }
   },
   "scripts": {
     "build": "tsc -p ./",
